@@ -1,0 +1,39 @@
+name: Miri Tests - reussir-rt
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'crates/runtime/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'crates/runtime/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  # schedule:
+  #   # Run daily at 2 AM UTC
+  #   - cron: '0 2 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  miri-test:
+    name: Miri Test (reussir-rt)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: nightly
+        components: rust-src, miri
+
+    - name: Run Miri tests on reussir-rt
+      run: cargo miri test -p reussir-rt
