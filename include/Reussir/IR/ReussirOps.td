@@ -441,6 +441,22 @@ def ReussirRcBorrowOp : ReussirRcOp<"borrow", []> {
 }
 
 //===----------------------------------------------------------------------===//
+// Rc IsUnique Operation
+//===----------------------------------------------------------------------===//
+def ReussirRcIsUniqueOp : ReussirRcOp<"is_unique", []> {
+  let summary = "Check if a RC pointer is unique";
+  let description = [{
+    `reussir.rc.is_unique` checks if a RC pointer is unique.
+  }];
+  let arguments = (ins Arg<ReussirRcType, "RC pointer to check">:$rcPtr);
+  let results = (outs Res<I1, "Is unique">:$isUnique);
+  let assemblyFormat = [{
+    `(` $rcPtr `:` qualified(type($rcPtr)) `)` `:` type($isUnique) attr-dict
+  }];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // Reussir Record Operations
 //===----------------------------------------------------------------------===//
 class ReussirRecordOp<string mnemonic, list<Trait> traits>
@@ -863,14 +879,53 @@ def ReussirClosureCreateOp : ReussirClosureOp<"create", [
     For the outlined form, outlinedVtable is required. No region is allowed.
     Target vtable shall present as a vtable operation within the same module and
     the vtable shall match the signature of the closure.
-    (TODO: add vtable operation and verification).
+    
+    A closure looks like the following:
+    ```c++
+    struct Closure {
+      size_t refcnt;
+      void* vtable;
+      size_t cursor;
+      // trailing payload
+    }
+    ```
+    When applying a new argument of type T. We first align the cursor to T's alignment
+    , store the argument at the (ptr + aligned cursor) address, and then
+    bump the cursor by T's size.
+
+    Before each application, we check if the closure has a single reference. If so, 
+    we do the operation inplace. Otherwise, we create a new closure using the clone
+    function inside the vtable.
+
+    Each evaluation of the closure consumes one reference.
+
+    The clone operation takes both the closure pointer, the cursor, and the new storage. It consists
+    of several if statements:
+
+    ```c++
+    if (cursor > offsetof(Closure, payload[0])) {
+      // clone payload[0]
+    } 
+
+    if (cursor > offsetof(Closure, payload[1])) {
+      // clone payload[1]
+    } 
+
+    if (cursor > offsetof(Closure, payload[2])) {
+      // clone payload[2]
+    } 
+
+    // ...
+    ```
+
+    Similarly, the drop operation consists of if protected drop functions.
   }];
   let arguments = (ins
     ReussirTokenType:$token,
     OptionalAttr<FlatSymbolRefAttr>:$vtable
   );
   let regions = (region MaxSizedRegion<1>:$body);
-  let results = (outs Res<ReussirClosureType, "created closure">:$closure);
+  let results = (outs Res<RcClosureType, "created closure">:$closure);
 
   let hasCustomAssemblyFormat = 1;
 
@@ -881,6 +936,7 @@ def ReussirClosureCreateOp : ReussirClosureOp<"create", [
     bool isInlined();
     // get the payload box for the closure
     ::reussir::ClosureBoxType getClosureBoxType();
+    ::reussir::RcBoxType getRcClosureBoxType();
 
     // Return the target function is the closure is trivially forwarding.
     // Return null otherwise.
@@ -962,12 +1018,12 @@ def ReussirClosureApplyOp : ReussirClosureOp<"apply", []> {
   let hasVerifier = 1;
   let arguments = (ins
     Arg<AnyType, "argument to apply">:$arg,
-    Arg<ReussirClosureType, "closure to apply">:$closure
+    Arg<RcClosureType, "closure to apply">:$closure
   );
-  let results = (outs Res<ReussirClosureType, "applied closure">:$applied);
+  let results = (outs Res<RcClosureType, "applied closure">:$applied);
   let assemblyFormat = [{
-    `(` $arg `:` type($arg) `)` `to` `(` $closure `:` type($closure) `)`
-    `:` type($applied) attr-dict
+    `(` $arg `:` type($arg) `)` `to` `(` $closure `:` qualified(type($closure)) `)`
+    `:` qualified(type($applied)) attr-dict
   }];
 }
 
@@ -979,12 +1035,45 @@ def ReussirClosureEvalOp : ReussirClosureOp<"eval", []> {
     This operation takes a fully applied closure and evaluates it.
     The output is the result of the closure if exists.
   }];
-  let arguments = (ins Arg<ReussirClosureType, "closure to evaluate">:$closure);
+  let arguments = (ins Arg<RcClosureType, "closure to evaluate">:$closure);
   let results = (outs Res<Optional<AnyType>, "result of the closure">:$result);
   let assemblyFormat = [{
-    `(` $closure `:` type($closure) `)` (`:` type($result)^)? attr-dict
+    `(` $closure `:` qualified(type($closure)) `)` (`:` qualified(type($result))^)? attr-dict
   }];
   let hasVerifier = 1;
 }
 
+def ReussirClosureUniqifyOp : ReussirClosureOp<"uniqify", []> {
+  let summary = "Make a unique closure from a closure";
+  let description = [{
+    `reussir.closure.uniqify` makes sure a unique closure from a closure.
+
+    This is a SCF operation that will expand into rc.is_unique operation guarded
+    scf if-else statement. If the original value is unique, the operation will
+    call the clone operation.
+  }];
+  let arguments = (ins Arg<RcClosureType, "closure to specialize">:$closure);
+  let results = (outs Res<RcClosureType, "specialized closure">:$uniqified);
+  let assemblyFormat = [{
+    `(` $closure `:` qualified(type($closure)) `)` `:` qualified(type($uniqified)) attr-dict
+  }];
+  let hasVerifier = 1;
+}
+
+def ReussirClosureCloneOp : ReussirClosureOp<"clone", []> {
+  let summary = "Clone a closure";
+  let description = [{
+    `reussir.closure.clone` clones a closure.
+
+    Since we typically have no way to understand the full closure, the memory layout
+    and other configuration related operations are handled inside the vtable clone operation.
+    This call just lowers into a function call to the clone operation via vtable.
+  }];
+  let arguments = (ins Arg<RcClosureType, "closure to clone">:$closure);
+  let results = (outs Res<RcClosureType, "cloned closure">:$cloned);
+  let assemblyFormat = [{
+    `(` $closure `:` qualified(type($closure)) `)` `:` qualified(type($cloned)) attr-dict
+  }];
+  let hasVerifier = 1;
+}
 #endif // REUSSIR_IR_REUSSIROPS_TD

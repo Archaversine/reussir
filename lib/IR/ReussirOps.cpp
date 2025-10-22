@@ -16,9 +16,11 @@
 #include <llvm/ADT/SmallVector.h>
 
 #include <llvm/ADT/StringSwitch.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Attributes.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
@@ -271,6 +273,21 @@ mlir::LogicalResult ReussirRcFreezeOp::verify() {
            << stringifyAtomicKind(inputRcType.getAtomicKind())
            << ", output atomic kind: "
            << stringifyAtomicKind(outputRcType.getAtomicKind());
+
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// RcIsUniqueOp verification
+//===----------------------------------------------------------------------===//
+mlir::LogicalResult ReussirRcIsUniqueOp::verify() {
+  RcType rcType = getRcPtr().getType();
+
+  // Check that RC pointer is not regional (i.e., has shared capability)
+  if (rcType.isRegional())
+    return emitOpError("isUnique can only be applied to non-regional RC "
+                       "(shared capability), ")
+           << "got: " << stringifyCapability(rcType.getCapability());
 
   return mlir::success();
 }
@@ -974,7 +991,7 @@ mlir::ParseResult ReussirClosureCreateOp::parse(mlir::OpAsmParser &parser,
   mlir::FlatSymbolRefAttr vtableAttr [[maybe_unused]];
   std::unique_ptr<mlir::Region> bodyRegion = std::make_unique<mlir::Region>();
   TokenType tokenType;
-  ClosureType closureType;
+  RcType closureType;
   enum class Keyword {
     vtable,
     body,
@@ -988,6 +1005,8 @@ mlir::ParseResult ReussirClosureCreateOp::parse(mlir::OpAsmParser &parser,
     return mlir::failure();
   if (parser.parseCustomTypeWithFallback(closureType))
     return mlir::failure();
+  if (!llvm::isa<ClosureType>(closureType.getElementType()))
+    return parser.emitError(operationLoc, "expected a Rc closure type");
   if (parser.parseLBrace())
     return mlir::failure();
   // Parse order insensitive fields (vtable, body, token)
@@ -1058,7 +1077,7 @@ mlir::ParseResult ReussirClosureCreateOp::parse(mlir::OpAsmParser &parser,
 void ReussirClosureCreateOp::print(mlir::OpAsmPrinter &p) {
   // Print return type
   p << " -> ";
-  p.printStrippedAttrOrType(getClosure().getType());
+  p.printType(getClosure().getType());
   p << " {";
   p.increaseIndent();
 
@@ -1095,10 +1114,11 @@ void ReussirClosureCreateOp::print(mlir::OpAsmPrinter &p) {
 mlir::LogicalResult ReussirClosureCreateOp::verify() {
   bool outlinedFlag = isOutlined();
   bool inlinedFlag = isInlined();
-  ClosureType closureType = getClosure().getType();
+  ClosureType closureType =
+      llvm::cast<ClosureType>(getClosure().getType().getElementType());
   if (!outlinedFlag && !inlinedFlag)
     return emitOpError("closure must be outlined or inlined");
-  ClosureBoxType closureBoxType = getClosureBoxType();
+  RcBoxType closureBoxType = getRcClosureBoxType();
   auto dataLayout = mlir::DataLayout::closest(this->getOperation());
   auto closureBoxSize = dataLayout.getTypeSize(closureBoxType);
   auto closureBoxAlignment = dataLayout.getTypeABIAlignment(closureBoxType);
@@ -1138,7 +1158,8 @@ mlir::LogicalResult ReussirClosureCreateOp::verifySymbolUses(
         getOperation(), getVtableAttr());
     if (!vtableOp)
       return emitOpError("virtual table not found: ") << getVtableAttr();
-    if (vtableOp.getClosureAttr().getValue() != getClosure().getType())
+    if (vtableOp.getClosureAttr().getValue() !=
+        getClosure().getType().getElementType())
       return emitOpError("virtual table closure type mismatch");
   }
   return mlir::success();
@@ -1156,8 +1177,14 @@ bool ReussirClosureCreateOp::isInlined() {
 }
 
 ClosureBoxType ReussirClosureCreateOp::getClosureBoxType() {
-  ClosureType closureType = getClosure().getType();
+  ClosureType closureType =
+      llvm::cast<ClosureType>(getClosure().getType().getElementType());
   return ClosureBoxType::get(getContext(), closureType.getInputTypes());
+}
+
+RcBoxType ReussirClosureCreateOp::getRcClosureBoxType() {
+  ClosureBoxType closureBoxType = getClosureBoxType();
+  return RcBoxType::get(getContext(), closureBoxType);
 }
 
 mlir::FlatSymbolRefAttr ReussirClosureCreateOp::getTrivialForwardingTarget() {
@@ -1186,7 +1213,8 @@ mlir::FlatSymbolRefAttr ReussirClosureCreateOp::getTrivialForwardingTarget() {
     return nullptr;
 
   // Get the closure type to check argument types
-  ClosureType closureType = getClosure().getType();
+  ClosureType closureType =
+      llvm::cast<ClosureType>(getClosure().getType().getElementType());
   auto closureInputTypes = closureType.getInputTypes();
   auto closureOutputType = closureType.getOutputType();
 
@@ -1294,7 +1322,8 @@ mlir::LogicalResult ReussirClosureYieldOp::verify() {
         "closure yield must be inside a closure create operation");
 
   // Get the closure type to determine if it has a return value
-  ClosureType closureType = parentOp.getClosure().getType();
+  ClosureType closureType =
+      llvm::cast<ClosureType>(parentOp.getClosure().getType().getElementType());
   mlir::Type expectedReturnType = closureType.getOutputType();
 
   // Check consistency between yield value and closure return type
@@ -1327,7 +1356,8 @@ mlir::LogicalResult ReussirClosureYieldOp::verify() {
 // ClosureApplyOp verification
 //===----------------------------------------------------------------------===//
 mlir::LogicalResult ReussirClosureApplyOp::verify() {
-  ClosureType closureType = getClosure().getType();
+  ClosureType closureType =
+      llvm::cast<ClosureType>(getClosure().getType().getElementType());
   mlir::Type argType = getArg().getType();
 
   // Get the input types of the closure
@@ -1345,7 +1375,8 @@ mlir::LogicalResult ReussirClosureApplyOp::verify() {
            << ", expected type: " << expectedArgType;
 
   // Verify the result type
-  ClosureType resultType = getApplied().getType();
+  ClosureType resultType =
+      llvm::cast<ClosureType>(getApplied().getType().getElementType());
 
   // The result closure should have one less input type
   auto expectedInputTypes = inputTypes.drop_front(1);
@@ -1384,7 +1415,8 @@ mlir::LogicalResult ReussirClosureApplyOp::verify() {
 // ClosureEvalOp verification
 //===----------------------------------------------------------------------===//
 mlir::LogicalResult ReussirClosureEvalOp::verify() {
-  ClosureType closureType = getClosure().getType();
+  ClosureType closureType =
+      llvm::cast<ClosureType>(getClosure().getType().getElementType());
 
   // Check that the closure has no input types (fully applied)
   auto inputTypes = closureType.getInputTypes();
@@ -1414,6 +1446,44 @@ mlir::LogicalResult ReussirClosureEvalOp::verify() {
       return emitOpError("closure has output type ")
              << closureOutputType << " but result is empty";
   }
+
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// Reussir Closure Uniqify Op
+//===----------------------------------------------------------------------===//
+// ClosureUniqifyOp verification
+//===----------------------------------------------------------------------===//
+mlir::LogicalResult ReussirClosureUniqifyOp::verify() {
+  // Get the input and output closure types
+  mlir::Type inputClosureType = getClosure().getType();
+  mlir::Type outputClosureType = getUniqified().getType();
+
+  // Check that input and output types are the same
+  if (inputClosureType != outputClosureType)
+    return emitOpError("input and output closure types must be the same, ")
+           << "input type: " << inputClosureType
+           << ", output type: " << outputClosureType;
+
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// Reussir Closure Clone Op
+//===----------------------------------------------------------------------===//
+// ClosureCloneOp verification
+//===----------------------------------------------------------------------===//
+mlir::LogicalResult ReussirClosureCloneOp::verify() {
+  // Get the input and output closure types
+  mlir::Type inputClosureType = getClosure().getType();
+  mlir::Type outputClosureType = getCloned().getType();
+
+  // Check that input and output types are the same
+  if (inputClosureType != outputClosureType)
+    return emitOpError("input and output closure types must be the same, ")
+           << "input type: " << inputClosureType
+           << ", output type: " << outputClosureType;
 
   return mlir::success();
 }
@@ -1455,6 +1525,107 @@ mlir::LogicalResult ReussirRefDropOp::verify() {
   }
 
   return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// emitOwnershipAcquisition
+//===----------------------------------------------------------------------===//
+mlir::LogicalResult emitOwnershipAcquisition(mlir::Value value,
+                                             mlir::OpBuilder &builder,
+                                             mlir::Location loc) {
+  mlir::OpBuilder::InsertionGuard guard(builder);
+  mlir::Type type = value.getType();
+
+  return llvm::TypeSwitch<mlir::Type, mlir::LogicalResult>(type)
+      // For Rc types, emit an Inc operation
+      .Case<RcType>([&](RcType) {
+        builder.create<ReussirRcIncOp>(loc, value);
+        return mlir::success();
+      })
+      // For Ref types, check what they point to and handle accordingly
+      .Case<RefType>([&](RefType refType) {
+        mlir::Type elementType = refType.getElementType();
+
+        if (isTriviallyCopyable(elementType))
+          return mlir::success();
+
+        // If reference points to an RC pointer, load it and recursively apply
+        if (llvm::isa<RcType>(elementType)) {
+          auto loadedValue =
+              builder.create<ReussirRefLoadOp>(loc, elementType, value);
+          return emitOwnershipAcquisition(loadedValue, builder, loc);
+        }
+
+        // If reference points to a record, handle fields directly
+        if (auto recordType = llvm::dyn_cast<RecordType>(elementType)) {
+          // The value is already a reference, so we can use it directly
+
+          if (recordType.getKind() == RecordKind::compound) {
+            // For compound types, recursively apply to each field
+            for (auto [i, actualMemberType, actualMemberCap] :
+                 llvm::enumerate(recordType.getMembers(),
+                                 recordType.getMemberCapabilities())) {
+              auto projectedType = getProjectedType(
+                  actualMemberType, actualMemberCap, refType.getCapability());
+              if (isTriviallyCopyable(projectedType))
+                continue;
+              auto fieldRef = builder.create<ReussirRefProjectOp>(
+                  loc, RefType::get(builder.getContext(), projectedType), value,
+                  builder.getIndexAttr(i));
+
+              if (emitOwnershipAcquisition(fieldRef, builder, loc).failed())
+                return mlir::failure();
+            }
+          } else if (recordType.getKind() == RecordKind::variant) {
+            // For variant types, emit a RecordDispatch operation
+            // First prepare the tag sets
+            llvm::SmallVector<mlir::Attribute> tagSetAttrs;
+            for (auto i : llvm::seq<int64_t>(0, recordType.getMembers().size()))
+              tagSetAttrs.push_back(builder.getDenseI64ArrayAttr({i}));
+
+            auto tagSetsAttr = builder.getArrayAttr(tagSetAttrs);
+
+            // Create the dispatch operation with the correct number of regions
+            auto dispatchOp = builder.create<ReussirRecordDispatchOp>(
+                loc, mlir::Type{}, value, tagSetsAttr,
+                recordType.getMembers().size());
+
+            // Create regions for each variant and apply ownership acquisition
+            // in each region
+            for (auto [i, actualVariantType, actualVariantCap] :
+                 llvm::enumerate(recordType.getMembers(),
+                                 recordType.getMemberCapabilities())) {
+
+              auto projectedType = getProjectedType(
+                  actualVariantType, actualVariantCap, refType.getCapability());
+
+              // Create a block for this variant region
+              RefType projectedRefTy =
+                  RefType::get(builder.getContext(), projectedType);
+              auto *block = builder.createBlock(
+                  &dispatchOp.getRegions()[i],
+                  dispatchOp.getRegions()[i].begin(), {projectedRefTy}, {loc});
+
+              // Set insertion point to the block
+              builder.setInsertionPointToStart(block);
+              if (!isTriviallyCopyable(projectedType)) {
+                if (emitOwnershipAcquisition(block->getArgument(0), builder,
+                                             loc)
+                        .failed())
+                  return mlir::failure();
+              }
+
+              // Add a terminator
+              builder.create<ReussirScfYieldOp>(loc, nullptr);
+            }
+          }
+        }
+
+        // For other reference types, this is a no-op
+        return mlir::success();
+      })
+      // For other types, return failure
+      .Default([&](mlir::Type) { return mlir::failure(); });
 }
 
 //===-----------------------------------------------------------------------===//

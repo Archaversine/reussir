@@ -11,10 +11,14 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
+#include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
+#include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h>
+#include <mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
@@ -25,14 +29,17 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/UB/IR/UBOps.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/Pass.h>
 
 #include "Reussir/Conversion/BasicOpsLowering.h"
+#include "Reussir/Conversion/TypeConverter.h"
 #include "Reussir/IR/ReussirDialect.h"
 #include "Reussir/IR/ReussirEnumAttrs.h"
 #include "Reussir/IR/ReussirOps.h"
@@ -777,6 +784,41 @@ struct ReussirRcFreezeOpConversionPattern
   }
 };
 
+struct ReussirRcIsUniqueOpConversionPattern
+    : public mlir::OpConversionPattern<ReussirRcIsUniqueOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  mlir::LogicalResult
+  matchAndRewrite(ReussirRcIsUniqueOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const override {
+    RcType rcPtrTy = op.getRcPtr().getType();
+
+    RcBoxType rcBoxType = rcPtrTy.getInnerBoxType();
+    auto convertedBoxType = getTypeConverter()->convertType(rcBoxType);
+    auto llvmPtrType = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
+    auto indexType = static_cast<const LLVMTypeConverter *>(getTypeConverter())
+                         ->getIndexType();
+
+    // GEP [0, 0] to locate refcnt
+    auto refcntPtr = rewriter.create<mlir::LLVM::GEPOp>(
+        op.getLoc(), llvmPtrType, convertedBoxType, adaptor.getRcPtr(),
+        llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 0});
+
+    // Load refcnt
+    auto refcnt =
+        rewriter.create<mlir::LLVM::LoadOp>(op.getLoc(), indexType, refcntPtr);
+
+    // Compare with 1 (unique means refcnt == 1)
+    auto one = rewriter.create<mlir::arith::ConstantOp>(
+        op.getLoc(), mlir::IntegerAttr::get(indexType, 1));
+    auto isUnique = rewriter.create<mlir::arith::CmpIOp>(
+        op.getLoc(), mlir::arith::CmpIPredicate::eq, refcnt, one);
+
+    rewriter.replaceOp(op, isUnique);
+    return mlir::success();
+  }
+};
+
 struct ReussirRegionCleanupOpConversionPattern
     : public mlir::OpConversionPattern<ReussirRegionCleanupOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -806,6 +848,150 @@ struct ReussirRegionCreateOpConversionPattern
         op.getLoc(), mlir::IntegerAttr::get(converter->getIndexType(), 1));
     rewriter.replaceOpWithNewOp<mlir::LLVM::AllocaOp>(op, ptrType, ptrType,
                                                       one);
+    return mlir::success();
+  }
+};
+
+struct ReussirClosureApplyOpConversionPattern
+    : public mlir::OpConversionPattern<ReussirClosureApplyOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+private:
+  mlir::Value emitPointerAlign(mlir::Value ptr, mlir::Type type,
+                               mlir::OpBuilder &builder) const {
+    const LLVMTypeConverter *converter =
+        static_cast<const LLVMTypeConverter *>(getTypeConverter());
+    auto alignment = converter->getDataLayout().getTypeABIAlignment(type);
+    if (alignment <= 1)
+      return ptr;
+    auto addr = builder.create<mlir::LLVM::PtrToIntOp>(
+        ptr.getLoc(), converter->getIndexType(), ptr);
+    auto mask = builder.create<mlir::arith::ConstantOp>(
+        ptr.getLoc(),
+        mlir::IntegerAttr::get(converter->getIndexType(), alignment - 1));
+    auto zero = builder.create<mlir::arith::ConstantOp>(
+        ptr.getLoc(), mlir::IntegerAttr::get(converter->getIndexType(), 0));
+    auto negAddr = builder.create<mlir::arith::SubIOp>(
+        ptr.getLoc(), converter->getIndexType(), zero, addr);
+    auto offset = builder.create<mlir::arith::AndIOp>(
+        ptr.getLoc(), converter->getIndexType(), negAddr, mask);
+    auto alignedAddr = builder.create<mlir::arith::AddIOp>(
+        ptr.getLoc(), converter->getIndexType(), addr, offset,
+        mlir::arith::IntegerOverflowFlags::nuw);
+    return builder.create<mlir::LLVM::IntToPtrOp>(ptr.getLoc(), ptr.getType(),
+                                                  alignedAddr.getResult());
+  }
+
+  mlir::Value emitPointerBump(mlir::Value ptr, mlir::Type type,
+                              mlir::OpBuilder &builder) const {
+    const LLVMTypeConverter *converter =
+        static_cast<const LLVMTypeConverter *>(getTypeConverter());
+    auto size = converter->getDataLayout().getTypeSize(type);
+    if (size == 0)
+      return ptr;
+    auto addr = builder.create<mlir::LLVM::PtrToIntOp>(
+        ptr.getLoc(), converter->getIndexType(), ptr);
+    auto sizeVal = builder.create<mlir::arith::ConstantOp>(
+        ptr.getLoc(), mlir::IntegerAttr::get(converter->getIndexType(), size));
+    auto newAddr = builder.create<mlir::arith::AddIOp>(
+        ptr.getLoc(), converter->getIndexType(), addr, sizeVal,
+        mlir::arith::IntegerOverflowFlags::nuw);
+    return builder.create<mlir::LLVM::IntToPtrOp>(ptr.getLoc(), ptr.getType(),
+                                                  newAddr.getResult());
+  }
+
+public:
+  mlir::LogicalResult
+  matchAndRewrite(ReussirClosureApplyOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const override {
+    auto rcClosureBox = op.getType().getInnerBoxType();
+    auto structType = typeConverter->convertType(rcClosureBox);
+    auto llvmPtrType = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
+
+    // This operation assumes that the closure is already uniquely owned.
+    // First, use GEP[0, 1, ARG_CURSOR_INDEX] and load op to read the cursor
+    // RcBox {
+    //    size_t refcnt;
+    //    {
+    //        void* vtable;
+    //        void* cursor;
+    //        // trailing payload
+    //    };
+    // }
+    auto cursorPtr = rewriter.create<mlir::LLVM::GEPOp>(
+        op.getLoc(), llvmPtrType, structType, adaptor.getClosure(),
+        llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 1,
+                                           ClosureBoxType::ARG_CURSOR_INDEX});
+    auto cursor = rewriter.create<mlir::LLVM::LoadOp>(op.getLoc(), llvmPtrType,
+                                                      cursorPtr);
+
+    // Second, align the cursor to current input type's TypeABIAlignment.
+    auto inputType = typeConverter->convertType(op.getArg().getType());
+    auto alignedCursor = emitPointerAlign(cursor, inputType, rewriter);
+
+    // Third, copy the input value to the aligned cursor.
+    rewriter.create<mlir::LLVM::StoreOp>(op.getLoc(), adaptor.getArg(),
+                                         alignedCursor);
+
+    // Fourth, bump the cursor by the input type's size.
+    auto newCursor = emitPointerBump(alignedCursor, inputType, rewriter);
+
+    // Fifth, store the new cursor back to the RcBox.
+    rewriter.create<mlir::LLVM::StoreOp>(op.getLoc(), newCursor, cursorPtr);
+
+    // Return the same closure pointer (in-place modification)
+    rewriter.replaceOp(op, adaptor.getClosure());
+    return mlir::success();
+  }
+};
+
+struct ReussirClosureCloneOpConversionPattern
+    : public mlir::OpConversionPattern<ReussirClosureCloneOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  mlir::LogicalResult
+  matchAndRewrite(ReussirClosureCloneOp op, OpAdaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const override {
+    mlir::Location loc = op.getLoc();
+    auto llvmPtrType = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
+    auto converter = static_cast<const LLVMTypeConverter *>(getTypeConverter());
+
+    // Get the RC closure box type and convert it to LLVM struct type
+    auto rcClosureBox = op.getType().getInnerBoxType();
+    auto structType = converter->convertType(rcClosureBox);
+
+    // First, GEP [0, 1, VTABLE_INDEX] to get the vtable pointer
+    auto vtablePtr = rewriter.create<mlir::LLVM::GEPOp>(
+        loc, llvmPtrType, structType, adaptor.getClosure(),
+        llvm::ArrayRef<mlir::LLVM::GEPArg>{0, 1, ClosureBoxType::VTABLE_INDEX});
+
+    // Load the vtable
+    auto vtable =
+        rewriter.create<mlir::LLVM::LoadOp>(loc, llvmPtrType, vtablePtr);
+
+    // Create LLVM struct type for vtable: { void*, void*, void* }
+    // representing { drop, clone, evaluate } function pointers
+    mlir::LLVM::LLVMStructType vtableType =
+        mlir::LLVM::LLVMStructType::getLiteral(
+            rewriter.getContext(), {llvmPtrType, llvmPtrType, llvmPtrType});
+
+    // Second, GEP [0, VTABLE_CLONE_INDEX] to get the clone function pointer
+    auto clonePtr = rewriter.create<mlir::LLVM::GEPOp>(
+        loc, llvmPtrType, vtableType, vtable,
+        llvm::ArrayRef<mlir::LLVM::GEPArg>{0, ClosureType::VTABLE_CLONE_INDEX});
+
+    // Load the clone function pointer
+    auto cloneFunc =
+        rewriter.create<mlir::LLVM::LoadOp>(loc, llvmPtrType, clonePtr);
+
+    // Create function type for clone: void* (*)(void*)
+    auto funcType =
+        mlir::LLVM::LLVMFunctionType::get(llvmPtrType, {llvmPtrType});
+
+    // Call the clone function with the RC pointer as argument
+    rewriter.replaceOpWithNewOp<mlir::LLVM::CallOp>(
+        op, funcType,
+        mlir::ValueRange{cloneFunc.getResult(), adaptor.getClosure()});
     return mlir::success();
   }
 };
@@ -867,6 +1053,7 @@ struct BasicOpsLoweringPass
     mlir::populateFuncToLLVMFuncOpConversionPattern(converter, patterns);
     mlir::populateFuncToLLVMConversionPatterns(converter, patterns);
     mlir::arith::populateArithToLLVMConversionPatterns(converter, patterns);
+    mlir::cf::populateControlFlowToLLVMConversionPatterns(converter, patterns);
     addRuntimeFunctions(getOperation(), converter);
     target.addIllegalDialect<mlir::func::FuncDialect,
                              mlir::arith::ArithDialect>();
@@ -875,10 +1062,11 @@ struct BasicOpsLoweringPass
         ReussirTokenReallocOp, ReussirRefLoadOp, ReussirRefStoreOp,
         ReussirRefSpilledOp, ReussirNullableCheckOp, ReussirNullableCreateOp,
         ReussirNullableCoerceOp, ReussirRcIncOp, ReussirRcCreateOp,
-        ReussirRcDecOp, ReussirRcBorrowOp, ReussirRecordCompoundOp,
-        ReussirRecordVariantOp, ReussirRefProjectOp, ReussirRecordTagOp,
-        ReussirRecordCoerceOp, ReussirRegionVTableOp, ReussirRcFreezeOp,
-        ReussirRegionCleanupOp, ReussirRegionCreateOp>();
+        ReussirRcDecOp, ReussirRcBorrowOp, ReussirRcIsUniqueOp,
+        ReussirRecordCompoundOp, ReussirRecordVariantOp, ReussirRefProjectOp,
+        ReussirRecordTagOp, ReussirRecordCoerceOp, ReussirRegionVTableOp,
+        ReussirRcFreezeOp, ReussirRegionCleanupOp, ReussirRegionCreateOp,
+        ReussirClosureApplyOp, ReussirClosureCloneOp>();
     target.addLegalDialect<mlir::LLVM::LLVMDialect>();
     if (failed(applyPartialConversion(getOperation(), target,
                                       std::move(patterns))))
@@ -898,7 +1086,7 @@ void populateBasicOpsLoweringToLLVMConversionPatterns(
       ReussirNullableCreateConversionPattern,
       ReussirNullableCoerceConversionPattern, ReussirRcIncConversionPattern,
       ReussirRcDecOpConversionPattern, ReussirRcCreateOpConversionPattern,
-      ReussirRcBorrowOpConversionPattern,
+      ReussirRcBorrowOpConversionPattern, ReussirRcIsUniqueOpConversionPattern,
       ReussirRecordCompoundConversionPattern,
       ReussirRecordVariantConversionPattern,
       ReussirReferenceProjectConversionPattern,
@@ -906,6 +1094,8 @@ void populateBasicOpsLoweringToLLVMConversionPatterns(
       ReussirRegionVTableOpConversionPattern,
       ReussirRcFreezeOpConversionPattern,
       ReussirRegionCleanupOpConversionPattern,
-      ReussirRegionCreateOpConversionPattern>(converter, patterns.getContext());
+      ReussirRegionCreateOpConversionPattern,
+      ReussirClosureApplyOpConversionPattern,
+      ReussirClosureCloneOpConversionPattern>(converter, patterns.getContext());
 }
 } // namespace reussir
