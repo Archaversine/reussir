@@ -1,10 +1,11 @@
 module Parser.Stmt where
 
-import Data.List.NonEmpty
+import Data.Maybe
 
 import Parser.Expr
 
 import Parser.Types
+import Parser.Types.Expr
 import Parser.Types.Stmt
 
 openBody :: Parser ()
@@ -25,12 +26,8 @@ semicolon = char ';' *> space
 comma :: Parser ()
 comma = char ',' *> space
 
-parseBody :: Parser (NonEmpty Stmt)
-parseBody = do 
-    first <- openBody *> parseStmt
-    rest  <- many (semicolon *> parseStmt) <* closeBody
-
-    return (first :| rest)
+parseBody :: Parser Expr
+parseBody = openBody *> parseExpr <* closeBody
 
 parseTypename :: Parser Typename
 parseTypename = fmap (\(Identifier name) -> Typename name) parseIdentifier
@@ -44,20 +41,15 @@ parseTypedParam = do
 
 parseFuncDef :: Parser (GlobalStmt FuncStmt)
 parseFuncDef = do 
-    vis  <- optional (string "pub" *> space)
+    vism <- optional (string "pub" *> space)
     name <- string "fn" *> space *> parseIdentifier <* openParen
     args <- optional $ parseTypedParam `sepBy` comma
-    body <- closeParen *> parseBody
+    ret  <- closeParen *> optional (string "->" *> space *> parseTypename)
+    body <- parseBody
 
-    return (Function _ _ _ _)
+    let vis = case vism of { Nothing -> Private; Just () -> Public }
 
-parseIfStmt :: Parser Stmt 
-parseIfStmt = do 
-    cond    <- string "if" *> space *> parseExpr 
-    iftrue  <- parseBody
-    iffalse <- string "else" *> space *> parseBody
-
-    return (IfStmt cond iftrue iffalse)
+    return (Function vis name (fromMaybe [] args) ret body)
 
 parseFuncCall :: Parser Stmt
 parseFuncCall = do
