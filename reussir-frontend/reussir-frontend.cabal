@@ -65,6 +65,7 @@ executable reussir-frontend
                       Parser.Stmt
                       Parser.Types
                       Parser.Types.Expr
+                      Parser.Types.Stmt
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
