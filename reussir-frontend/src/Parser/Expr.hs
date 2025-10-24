@@ -28,13 +28,19 @@ parseIdentifier = do
 
     return $ Identifier (first : rest)
 
+parseIntSuffix :: Parser ()
+parseIntSuffix = choice [string ('u' : show @Int s) | s <- [8, 16, 32, 64]] *> space
+
+parseFloatSuffix :: Parser ()
+parseFloatSuffix = choice [string ('f' : show @Int s) | s <- [16, 32, 64]] *> space
+
 parseInt :: Parser Int 
-parseInt = read <$> some digitChar <* space
+parseInt = read <$> some digitChar <* optional parseIntSuffix <* space
 
 parseDouble :: Parser Double
 parseDouble = do 
     first <- some digitChar
-    rest  <- char '.' *> some digitChar <* space
+    rest  <- char '.' *> some digitChar <* optional parseFloatSuffix <* space
     return $ read (first ++ "." ++ rest)
 
 parseString :: Parser String
