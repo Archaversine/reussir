@@ -17,4 +17,5 @@ data Expr
     = ConstExpr Constant
     | BinOpExpr BinaryOp Expr Expr
     | UnaryOpExpr UnaryOp Expr
+    | If Expr Expr Expr
     deriving Show

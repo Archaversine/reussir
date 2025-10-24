@@ -8,12 +8,6 @@ import Parser.Types
 import Parser.Types.Expr
 import Parser.Types.Stmt
 
-openBody :: Parser ()
-openBody = char '{' *> space
-
-closeBody :: Parser ()
-closeBody = char '}' *> space
-
 openParen :: Parser ()
 openParen = char '(' *> space
 
@@ -25,9 +19,6 @@ semicolon = char ';' *> space
 
 comma :: Parser ()
 comma = char ',' *> space
-
-parseBody :: Parser Expr
-parseBody = openBody *> parseExpr <* closeBody
 
 parseTypename :: Parser Typename
 parseTypename = fmap (\(Identifier name) -> Typename name) parseIdentifier

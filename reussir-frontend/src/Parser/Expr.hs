@@ -9,6 +9,15 @@ import Data.Functor
 import Parser.Types
 import Parser.Types.Expr
 
+openBody :: Parser ()
+openBody = char '{' *> space
+
+closeBody :: Parser ()
+closeBody = char '}' *> space
+
+parseBody :: Parser Expr
+parseBody = openBody *> parseExpr <* closeBody
+
 parseIdentifier :: Parser Identifier
 parseIdentifier = do 
     first <- letterChar
@@ -33,6 +42,14 @@ parseBool = choice
     [ string "true"  $> True
     , string "false" $> False
     ] <* space
+
+parseIf :: Parser Expr 
+parseIf = do 
+    cond    <- string "if" *> space *> parseExpr
+    iftrue  <- parseBody
+    iffalse <- string "else" *> space *> parseBody
+
+    return (If cond iftrue iffalse)
 
 parseConstant :: Parser Constant
 parseConstant = try (ConstDouble <$> parseDouble)
@@ -61,6 +78,7 @@ exprOpTable = [ [ prefixOp '-' Negate
 parseExprTerm :: Parser Expr 
 parseExprTerm = choice
     [ char '(' *> parseExpr <* char ')' <* space
+    , parseIf
     , ConstExpr <$> parseConstant
     ]
 
