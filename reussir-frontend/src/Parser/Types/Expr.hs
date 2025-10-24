@@ -20,4 +20,5 @@ data Expr
     | UnaryOpExpr UnaryOp Expr
     | If Expr Expr Expr
     | Cast Typename Expr
+    | LetIn Identifier Expr Expr
     deriving Show

@@ -14,9 +14,6 @@ openParen = char '(' *> space
 closeParen :: Parser ()
 closeParen = char ')' *> space
 
-semicolon :: Parser ()
-semicolon = char ';' *> space
-
 comma :: Parser ()
 comma = char ',' *> space
 

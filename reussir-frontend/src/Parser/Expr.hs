@@ -9,6 +9,9 @@ import Data.Functor
 import Parser.Types
 import Parser.Types.Expr
 
+semicolon :: Parser ()
+semicolon = char ';' *> space
+
 openBody :: Parser ()
 openBody = char '{' *> space
 
@@ -60,6 +63,14 @@ parseIf = do
 
     return (If cond iftrue iffalse)
 
+parseLetIn :: Parser Expr 
+parseLetIn = do 
+    name  <- string "let" *> space *> parseIdentifier
+    value <- char '=' *> space *> parseExpr <* semicolon
+    body  <- parseExpr
+
+    return (LetIn name value body)
+
 parseConstant :: Parser Constant
 parseConstant = try (ConstDouble <$> parseDouble)
             <|>     (ConstInt    <$> parseInt)
@@ -109,6 +120,7 @@ parseExprTerm :: Parser Expr
 parseExprTerm = choice
     [ char '(' *> parseExpr <* char ')' <* space
     , parseIf
+    , parseLetIn
     , ConstExpr <$> parseConstant
     ]
 
