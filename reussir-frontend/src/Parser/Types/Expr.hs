@@ -1,6 +1,7 @@
 module Parser.Types.Expr where
 
 newtype Identifier = Identifier String deriving Show
+newtype Typename = Typename String deriving Show
 
 data Constant
     = ConstInt Int
@@ -18,4 +19,5 @@ data Expr
     | BinOpExpr BinaryOp Expr Expr
     | UnaryOpExpr UnaryOp Expr
     | If Expr Expr Expr
+    | Cast Typename Expr
     deriving Show

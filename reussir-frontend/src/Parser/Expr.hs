@@ -18,6 +18,9 @@ closeBody = char '}' *> space
 parseBody :: Parser Expr
 parseBody = openBody *> parseExpr <* closeBody
 
+parseTypename :: Parser Typename
+parseTypename = fmap (\(Identifier name) -> Typename name) parseIdentifier
+
 parseIdentifier :: Parser Identifier
 parseIdentifier = do 
     first <- letterChar
@@ -64,8 +67,14 @@ prefixOp symbol op = Prefix (char symbol *> space $> UnaryOpExpr op)
 infixLOp :: Char -> BinaryOp -> Operator Parser Expr
 infixLOp symbol op = InfixL (char symbol *> space $> BinOpExpr op)
 
+castOp :: Operator Parser Expr
+castOp = Postfix $ do 
+    ty <- string "as" *> space *> parseTypename
+    return (Cast ty)
+
 exprOpTable :: [[Operator Parser Expr]]
 exprOpTable = [ [ prefixOp '-' Negate
+                , castOp
                 ]
               , [ infixLOp '*' Mul
                 , infixLOp '/' Div

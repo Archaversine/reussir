@@ -4,8 +4,6 @@ import Data.List.NonEmpty
 
 import Parser.Types.Expr
 
-newtype Typename = Typename String
-
 data FunctionVis = Public | Private
 
 data GlobalStmtTy = FuncStmt

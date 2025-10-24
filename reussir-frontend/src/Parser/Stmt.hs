@@ -20,9 +20,6 @@ semicolon = char ';' *> space
 comma :: Parser ()
 comma = char ',' *> space
 
-parseTypename :: Parser Typename
-parseTypename = fmap (\(Identifier name) -> Typename name) parseIdentifier
-
 parseTypedParam :: Parser (Identifier, Typename)
 parseTypedParam = do 
     name <- parseIdentifier <* char ':' <* space 
