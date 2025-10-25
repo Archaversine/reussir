@@ -15,7 +15,7 @@ parseTypedParam = do
 
     return (name, ty)
 
-parseFuncDef :: Parser (GlobalStmt FuncStmt)
+parseFuncDef :: Parser Stmt
 parseFuncDef = do 
     vism <- optional (string "pub" *> space)
     name <- string "fn" *> space *> parseIdentifier <* openParen
@@ -27,9 +27,6 @@ parseFuncDef = do
 
     return (Function vis name (fromMaybe [] args) ret body)
 
-parseGlobalStmt :: Parser AnyGlobalStmt
-parseGlobalStmt = AnyGlobalStmt <$> parseFuncDef
-
 parseStmt :: Parser Stmt
-parseStmt = error "todo"
+parseStmt = parseFuncDef
 

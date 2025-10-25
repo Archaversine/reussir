@@ -4,8 +4,8 @@ import Parser.Stmt
 import Parser.Types
 import Parser.Types.Stmt
 
-type Prog = [AnyGlobalStmt]
+type Prog = [Stmt]
 
 parseProg :: Parser Prog 
-parseProg = many parseGlobalStmt <* eof
+parseProg = many parseStmt <* eof
 
