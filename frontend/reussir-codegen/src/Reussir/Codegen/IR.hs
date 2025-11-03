@@ -261,6 +261,7 @@ data Function = Function
     , funcPrivate :: Bool
     , funcBody :: Maybe Block
     , funcArgs :: [TypedValue]
+    , funcLoc :: Maybe Location
     , result :: TT.Type
     }
     deriving (Show)
