@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Reussir.Codegen.IR (
     Instr (..),
     FuncCall (..),
@@ -7,12 +9,16 @@ module Reussir.Codegen.IR (
     Linkage (..),
     LLVMVisibility (..),
     MLIRVisibility (..),
+    instrCodegen,
 ) where
 
 import Data.Int (Int64)
+import Data.Text.Internal.Builder qualified as TB
 import Data.Text.Lazy qualified as T
-import Reussir.Codegen.Context (Path)
-import Reussir.Codegen.Intrinsics (IntrinsicCall)
+import Reussir.Codegen.Context (Path, emitLine)
+import Reussir.Codegen.Context.Codegen (Codegen, withLocation)
+import Reussir.Codegen.Context.Emission (emitBuilder)
+import Reussir.Codegen.Intrinsics (IntrinsicCall, intrinsicCallCodegen)
 import Reussir.Codegen.Location (Location)
 import Reussir.Codegen.Type.Data qualified as TT
 import Reussir.Codegen.Value (TypedValue)
@@ -264,3 +270,9 @@ data Function = Function
     , result :: TT.Type
     }
     deriving (Show)
+
+instrCodegen :: Instr -> Codegen ()
+instrCodegen (Panic message) = emitLine $ emitBuilder $ "reussir.panic " <> TB.fromLazyText message
+instrCodegen (ICall intrinsic) = intrinsicCallCodegen intrinsic
+instrCodegen (WithLoc loc instr) = withLocation loc (instrCodegen instr)
+instrCodegen _ = error "Not implemented"
