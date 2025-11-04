@@ -1,8 +1,18 @@
 module Parser.Types.Expr where
 
-newtype Identifier = Identifier { unIdentifier :: String } deriving Show
+import Data.List
 
-data Typename = Typename String [Typename] deriving Show
+newtype Identifier = Identifier { unIdentifier :: String }
+
+instance Show Identifier where
+    show (Identifier name) = '$' : name
+
+data Typename = Typename String [Typename] | Arr Typename Typename
+
+instance Show Typename where
+    show (Typename name [])   = '@' : name
+    show (Typename name args) = '@' : name ++ "<" ++ intercalate ", " (map show args) ++ ">"
+    show (Arr a b)            = "(" ++ show a ++ " -> " ++ show b ++ ")"
 
 data Constant
     = ConstInt Int

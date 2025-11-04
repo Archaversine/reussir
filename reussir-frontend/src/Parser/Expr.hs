@@ -37,15 +37,27 @@ openAngle = char '<' *> space
 closeAngle :: Parser ()
 closeAngle = char '>' *> space
 
+rightArrow :: Parser ()
+rightArrow = string "->" *> space
+
 parseBody :: Parser Expr
 parseBody = openBody *> parseExpr <* closeBody
 
-parseTypename :: Parser Typename
-parseTypename = do 
+parseTypenameTerm :: Parser Typename
+parseTypenameTerm = do 
     prefix <- fmap unIdentifier parseIdentifier
     suffix <- optional parseTypenameParams
 
     return (Typename prefix (fromMaybe [] suffix))
+
+parseTypenameArrow :: Parser Typename
+parseTypenameArrow = do 
+    a <- parseTypenameTerm <* rightArrow
+    b <- parseTypenameTerm
+    return (Arr a b)
+
+parseTypename :: Parser Typename
+parseTypename = try parseTypenameArrow <|> parseTypenameTerm
 
 parseTypenameParams :: Parser [Typename]
 parseTypenameParams = openAngle *> parseTypename `sepBy1` comma <* closeAngle
