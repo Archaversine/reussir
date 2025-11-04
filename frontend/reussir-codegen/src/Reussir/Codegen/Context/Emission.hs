@@ -12,6 +12,7 @@ module Reussir.Codegen.Context.Emission (
     emitBuilderLineM,
     emitBuilderLine,
     intercalate,
+    emitLocIfPresent,
 )
 where
 
@@ -55,6 +56,12 @@ emitIndentation = do
     indentLevel <- E.gets indentation
     emitBuilder $ TB.Builder $ TBB.appendChars (fromIntegral indentLevel) '\t'
 
+emitLocIfPresent :: Codegen ()
+emitLocIfPresent = do
+    loc <- E.gets locForLine
+    for_ loc $ \l -> do
+        emitBuilder $ " loc(" <> "#loc" <> TB.fromDec l <> ")"
+
 {- | Emit code with indentation and a newline.
   This is used to emit complete lines of code.
 -}
@@ -62,9 +69,7 @@ emitLine :: Codegen a -> Codegen a
 emitLine codegen = do
     emitIndentation
     a <- codegen
-    loc <- E.gets locForLine
-    for_ loc $ \l -> do
-        emitBuilder $ " loc(" <> "#loc" <> TB.fromDec l <> ")"
+    emitLocIfPresent
     emitBuilder "\n"
     pure a
 

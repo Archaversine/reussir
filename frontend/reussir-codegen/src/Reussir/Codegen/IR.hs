@@ -22,7 +22,7 @@ import Data.Text.Builder.Linear qualified as TB
 import Effectful.Log (logAttention_)
 import Reussir.Codegen.Context (Emission (emit), Path, emitIndentation, emitLine, incIndentation)
 import Reussir.Codegen.Context.Codegen (Codegen, getNewBlockId, incIndentationBy, withLocation, withoutLocation)
-import Reussir.Codegen.Context.Emission (emitBuilder, emitBuilderLine, emitBuilderLineM, intercalate)
+import Reussir.Codegen.Context.Emission (emitBuilder, emitBuilderLine, emitBuilderLineM, emitLocIfPresent, intercalate)
 import Reussir.Codegen.Intrinsics (IntrinsicCall, intrinsicCallCodegen)
 import Reussir.Codegen.Location (Location)
 import Reussir.Codegen.Type.Data (isBoolType)
@@ -199,87 +199,107 @@ data Instr
         { refStoreTarget :: TypedValue
         , refStoreVal :: TypedValue
         }
-    | -- | reussir.region.run: Execute a region (inner region accepts !reussir.region argument)
-      --
-      -- Syntax: [%res =] reussir.region.run [-> result_type] {
-      --           ^bb0(%region : !reussir.region):
-      --             ...
-      --             reussir.region.yield [%val]
-      --         }
-      -- Constraints: inner region must accept one !reussir.region argument
-      --              can optionally yield a flex value which becomes rigid after execution
-      --              cannot be nested in the same function
+    | {- | reussir.region.run: Execute a region (inner region accepts !reussir.region argument)
+
+      Syntax: [%res =] reussir.region.run [-> result_type] {
+          ^bb0(%region : !reussir.region):
+            ...
+            reussir.region.yield [%val]
+        }
+      Constraints: inner region must accept one !reussir.region argument
+             can optionally yield a flex value which becomes rigid after execution
+             cannot be nested in the same function
+      -}
       RegionRun
         { regionRunBody :: Block
         , regionRunRes :: Maybe TypedValue
         }
-    | -- | Yield operations for different contexts
-      --
-      -- reussir.region.yield - Yield from a region
-      --   Syntax: reussir.region.yield [%value : !reussir.rc<T flex>]
-      --   Constraints: must be inside region.run
-      --                value is optional and must be !reussir.rc<T flex> if present
-      --
-      -- reussir.closure.yield - Yield from a closure body
-      --   Syntax: reussir.closure.yield [%value : T]
-      --   Constraints: must be inside closure.create
-      --                value type must match closure return type
-      --                value is optional only if closure has no return type
-      --
-      -- scf.yield - Yield from high-level SCF operations
-      --   Syntax: reussir.scf.yield [%value : T]
-      --   Constraints: must be inside nullable.dispatch or record.dispatch
-      --                value type must match parent operation's result type
-      --                value is optional only if parent has no result
+    | {- | Yield operations for different contexts
+
+      reussir.region.yield - Yield from a region
+      Syntax: reussir.region.yield [%value : !reussir.rc<T flex>]
+      Constraints: must be inside region.run
+               value is optional and must be !reussir.rc<T flex> if present
+
+      reussir.closure.yield - Yield from a closure body
+      Syntax: reussir.closure.yield [%value : T]
+      Constraints: must be inside closure.create
+               value type must match closure return type
+               value is optional only if closure has no return type
+
+      scf.yield - Yield from high-level SCF operations
+      Syntax: reussir.scf.yield [%value : T]
+      Constraints: must be inside nullable.dispatch or record.dispatch
+               value type must match parent operation's result type
+               value is optional only if parent has no result
+      -}
       Yield YieldKind (Maybe TypedValue)
-    | -- | reussir.closure.create: Create a closure (inlined with body or outlined with vtable)
-      --
-      -- Syntax: %closure = reussir.closure.create [token(%t : !reussir.token<...>)] [vtable(@symbol)] {
-      --           ^bb0(%arg1 : T1, %arg2 : T2, ...):
-      --             ...
-      --             reussir.closure.yield [%result : R]
-      --         }
-      -- Constraints: closure is always wrapped in !reussir.rc pointer
-      --              inlined form: body region required, no vtable attribute
-      --              outlined form: vtable attribute required, no body region
-      --              token layout must match RcBox with ClosureHeader and Payload
+    | {- | reussir.closure.create: Create a closure (inlined with body or outlined with vtable)
+
+      Syntax: %closure = reussir.closure.create [token(%t : !reussir.token<...>)] [vtable(@symbol)] {
+          ^bb0(%arg1 : T1, %arg2 : T2, ...):
+            ...
+            reussir.closure.yield [%result : R]
+        }
+      Constraints: closure is always wrapped in !reussir.rc pointer
+             inlined form: body region required, no vtable attribute
+             outlined form: vtable attribute required, no body region
+             token layout must match RcBox with ClosureHeader and Payload
+      -}
       ClosureCreate
         { closureCreateBody :: Block
         , closureCreateRes :: TypedValue
         }
-    | -- | reussir.closure.apply: Apply an argument to a closure (partial application)
-      --
-      -- Syntax: %applied = reussir.closure.apply (%arg : T) to (%closure : !reussir.closure<(T, ...) -> R>)
-      --           : !reussir.closure<(...) -> R>
-      -- Constraints: closure must have at least one unapplied argument
-      --              arg type must match the next expected argument type
-      --              result closure has one fewer argument
+    | {- | reussir.closure.apply: Apply an argument to a closure (partial application)
+
+      Syntax: %applied = reussir.closure.apply (%arg : T) to (%closure : !reussir.closure<(T, ...) -> R>)
+          : !reussir.closure<(...) -> R>
+      Constraints: closure must have at least one unapplied argument
+             arg type must match the next expected argument type
+             result closure has one fewer argument
+      -}
       ClosureApply
         { closureApplyTarget :: TypedValue
         , closureApplyArg :: TypedValue
         , closureApplyRes :: TypedValue
         }
-    | -- | reussir.closure.eval: Evaluate a fully-applied closure
-      --
-      -- Syntax: [%result =] reussir.closure.eval (%closure : !reussir.closure<() -> R>) [: R]
-      -- Constraints: closure must be fully applied (no remaining arguments)
-      --              consumes one reference to the closure
-      --              result type must match closure return type
+    | {- | reussir.closure.eval: Evaluate a fully-applied closure
+
+      Syntax: [%result =] reussir.closure.eval (%closure : !reussir.closure<() -> R>) [: R]
+      Constraints: closure must be fully applied (no remaining arguments)
+             consumes one reference to the closure
+             result type must match closure return type
+      -}
       ClosureEval
         { closureEvalTarget :: TypedValue
-        , closureEvalRes :: TypedValue
+        , closureEvalRes :: Maybe TypedValue
         }
-    | -- | reussir.closure.uniqify: Ensure unique closure ownership (high-level SCF)
-      --
-      -- Syntax: %unique = reussir.closure.uniqify (%closure : !reussir.closure<T>) : !reussir.closure<T>
-      -- Constraints: expands to rc.is_unique guarded scf.if-else
-      --              clones closure if not unique (refcount > 1)
-      --              returns original closure if unique
+    | {- | reussir.closure.uniqify: Ensure unique closure ownership (high-level SCF)
+
+      Syntax: %unique = reussir.closure.uniqify (%closure : !reussir.closure<T>) : !reussir.closure<T>
+      Constraints: expands to rc.is_unique guarded scf.if-else
+             clones closure if not unique (refcount > 1)
+             returns original closure if unique
+      -}
       ClosureUniqify
         { closureUniqifyTarget :: TypedValue
         , closureUniqifyRes :: TypedValue
         }
-    | -- | If-then-else operation
+    | {- | If-then-else operation
+
+      Example:
+      ```mlir
+      %x, %y = scf.if %b -> (f32, f32) {
+        %x_true = ...
+        %y_true = ...
+        scf.yield %x_true, %y_true : f32, f32
+      } else {
+        %x_false = ...
+        %y_false = ...
+        scf.yield %x_false, %y_false : f32, f32
+      }
+      ```
+      -}
       IfThenElse
         { ifThenElseCond :: TypedValue
         , ifThenElseThen :: Block
@@ -354,7 +374,8 @@ blockCodegen printArgs blk = do
             emitBuilder ":\n"
         let innerIndent = if printArgs then 1 else 0
         incIndentationBy innerIndent $ forM_ (blkBody blk) instrCodegen
-    emitBuilderLine "}"
+    emitIndentation
+    emitBuilder "}"
 
 funcCallCodegen :: FuncCall -> Codegen ()
 funcCallCodegen (FuncCall target args result) = emitLine $ do
@@ -377,10 +398,14 @@ nullableDispCodegen nullDispVal nullDispNonnull nullDispNull nullDispRes = do
         emitIndentation
         emitBuilder "nonnull -> "
         blockCodegen True nullDispNonnull
+        emitBuilder "\n"
         emitIndentation
         emitBuilder "null -> "
         blockCodegen True nullDispNull
-    emitBuilderLine "}"
+        emitBuilder "\n"
+    emitBuilder "}"
+    emitLocIfPresent
+    emitBuilder "\n"
   where
     isSingleton :: [a] -> Bool
     isSingleton [_] = True
@@ -492,7 +517,9 @@ regionRunCodegen regionRunBody regionRunRes = do
     for_ regionRunRes $ emit . fst >=> emitBuilder . (<> " = ")
     emitBuilder "reussir.region.run "
     for_ regionRunRes $ emit . snd >=> emitBuilder . (" -> " <>)
-    blockCodegen True regionRunBody
+    withoutLocation $ blockCodegen True regionRunBody
+    emitLocIfPresent
+    emitBuilder "\n"
 
 yieldCodegen :: YieldKind -> Maybe TypedValue -> Codegen ()
 yieldCodegen kind result = emitBuilderLineM $ do
@@ -503,6 +530,73 @@ yieldCodegen kind result = emitBuilderLineM $ do
         YieldClosure -> "reussir.closure.yield"
         YieldRegion -> "reussir.region.yield"
         YieldScf -> "scf.yield"
+
+closureCreateCodegen :: Block -> TypedValue -> Codegen ()
+closureCreateCodegen body (resVal, resTy) = do
+    resVal' <- emit resVal
+    resTy' <- emit resTy
+    emitIndentation
+    emitBuilder $ resVal' <> " = reussir.closure.create -> " <> resTy' <> " {\n"
+    incIndentation $ withoutLocation $ do
+        emitIndentation
+        emitBuilder "body"
+        blockCodegen True body
+        emitBuilder "\n"
+    emitBuilder "}"
+    emitLocIfPresent
+    emitBuilder "\n"
+
+closureApplyCodegen :: TypedValue -> TypedValue -> TypedValue -> Codegen ()
+closureApplyCodegen target arg (resVal, resTy) = emitBuilderLineM $ do
+    target' <- fmtTypedValue target
+    arg' <- fmtTypedValue arg
+    resVal' <- emit resVal
+    resTy' <- emit resTy
+    return $ resVal' <> " = reussir.closure.apply (" <> target' <> ") (" <> arg' <> ") : " <> resTy'
+
+closureEvalCodegen :: TypedValue -> Maybe TypedValue -> Codegen ()
+closureEvalCodegen target result = emitLine $ do
+    target' <- fmtTypedValue target
+    for_ result $ emit . fst >=> emitBuilder . (<> " = ")
+    emitBuilder $ "reussir.closure.eval (" <> target' <> ")"
+    for_ result $ emit . snd >=> emitBuilder . (" : " <>)
+
+closureUniqifyCodegen :: TypedValue -> TypedValue -> Codegen ()
+closureUniqifyCodegen = emitUnaryOp "reussir.closure.uniqify"
+
+ifThenElseCodegen :: TypedValue -> Block -> Maybe Block -> Maybe TypedValue -> Codegen ()
+ifThenElseCodegen (condVal, _) thenBlock elseBlock result = do
+    emitIndentation
+    for_ result $ emit . fst >=> emitBuilder . (<> " = ")
+    condVal' <- emit condVal
+    emitBuilder $ "scf.if (" <> condVal' <> ")"
+    for_ result $ emit . snd >=> emitBuilder . (" -> " <>)
+    withoutLocation $ blockCodegen True thenBlock
+    for_ elseBlock $ \blk -> withoutLocation $ do
+        emitBuilder "else"
+        blockCodegen True blk
+    emitLocIfPresent
+    emitBuilder "\n"
+
+variantDispCaseCodegen :: [Int64] -> Block -> Codegen ()
+variantDispCaseCodegen tagSets body = do
+    emitIndentation
+    emitBuilder $ "[" <> intercalate ", " (map TB.fromDec tagSets) <> "] ->"
+    withoutLocation $ blockCodegen True body
+    emitBuilder "\n"
+
+variantDispCodegen :: TypedValue -> VariantDispData -> Maybe TypedValue -> Codegen ()
+variantDispCodegen val (VariantDispData cases) result = do
+    emitIndentation
+    for_ result $ emit . fst >=> emitBuilder . (<> " = ")
+    val' <- fmtTypedValue val
+    emitBuilder $ "reussir.record.dispatch (" <> val' <> ")"
+    for_ result $ emit . fst >=> emitBuilder . (" -> " <>)
+    emitBuilder " {\n"
+    incIndentation $ forM_ cases $ uncurry variantDispCaseCodegen
+    emitBuilder "}"
+    emitLocIfPresent
+    emitBuilder "\n"
 
 instrCodegen :: Instr -> Codegen ()
 instrCodegen (ICall intrinsic) = intrinsicCallCodegen intrinsic
@@ -519,11 +613,16 @@ instrCodegen (RcBorrow i o) = rcBorrowCodegen i o
 instrCodegen (RcIsUnique i o) = rcIsUniqueCodegen i o
 instrCodegen (CompoundCreate fields res) = compoundCreateCodegen fields res
 instrCodegen (VariantCreate tag value res) = variantCreateCodegen tag value res
+instrCodegen (VariantDispatch val cases res) = variantDispCodegen val cases res
 instrCodegen (RefProject val field res) = refProjectCodegen val field res
 instrCodegen (RefSpill val res) = refSpillCodegen val res
 instrCodegen (RefLoad val res) = refLoadCodegen val res
 instrCodegen (RefStore target value) = refStoreCodegen target value
 instrCodegen (RegionRun body res) = regionRunCodegen body res
 instrCodegen (Yield kind result) = yieldCodegen kind result
+instrCodegen (ClosureCreate body res) = closureCreateCodegen body res
+instrCodegen (ClosureApply target arg res) = closureApplyCodegen target arg res
+instrCodegen (ClosureEval target res) = closureEvalCodegen target res
+instrCodegen (ClosureUniqify target res) = closureUniqifyCodegen target res
+instrCodegen (IfThenElse cond thenBlock elseBlock res) = ifThenElseCodegen cond thenBlock elseBlock res
 instrCodegen (WithLoc loc instr) = withLocation loc (instrCodegen instr)
-instrCodegen _ = error "Not implemented"
