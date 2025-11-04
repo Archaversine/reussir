@@ -16,6 +16,9 @@ colon = char ':' *> space
 semicolon :: Parser ()
 semicolon = char ';' *> space
 
+doubleColon :: Parser () 
+doubleColon = string "::" *> space
+
 openParen :: Parser ()
 openParen = char '(' *> space
 
@@ -43,6 +46,14 @@ rightArrow = string "->" *> space
 parseBody :: Parser Expr
 parseBody = openBody *> parseExpr <* closeBody
 
+parsePattern :: Parser Pattern
+parsePattern = do 
+    ns   <- parseIdentifier
+    name <- doubleColon *> parseIdentifier
+    args <- optional $ openParen *> parseIdentifier `sepBy` comma <* closeParen
+
+    return (Pattern ns name (fromMaybe [] args))
+
 parseTypenameTerm :: Parser Typename
 parseTypenameTerm = do 
     prefix <- fmap unIdentifier parseIdentifier
@@ -64,7 +75,7 @@ parseTypenameParams = openAngle *> parseTypename `sepBy1` comma <* closeAngle
 
 parseIdentifier :: Parser Identifier
 parseIdentifier = do 
-    first <- letterChar
+    first <- letterChar <|> char '_'
     rest  <- many (alphaNumChar <|> char '_') <* space
 
     return $ Identifier (first : rest)
@@ -123,6 +134,18 @@ parseLambda = do
 
     return (Lambda name ty body)
 
+parseMatchCase :: Parser (Pattern, Expr)
+parseMatchCase = do 
+    pat  <- parsePattern
+    expr <- string "=>" *> space *> parseExpr
+    return (pat, expr)
+
+parseMatch :: Parser Expr
+parseMatch = do 
+    expr <- string "match" *> space *> parseExpr
+    body <- openBody *> parseMatchCase `sepBy` comma <* closeBody
+    return (Match expr body)
+
 parseConstant :: Parser Constant
 parseConstant = try (ConstDouble <$> parseDouble)
             <|>     (ConstInt    <$> parseInt)
@@ -174,6 +197,7 @@ parseExprTerm = choice
     [ char '(' *> parseExpr <* char ')' <* space
     , parseIf
     , parseLetIn
+    , parseMatch
     , try parseFuncCall
     , ConstExpr <$> parseConstant
     ]

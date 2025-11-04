@@ -14,6 +14,11 @@ instance Show Typename where
     show (Typename name args) = '@' : name ++ "<" ++ intercalate ", " (map show args) ++ ">"
     show (Arr a b)            = "(" ++ show a ++ " -> " ++ show b ++ ")"
 
+data Pattern = Pattern Identifier Identifier [Identifier]
+
+instance Show Pattern where
+    show (Pattern ns name es) = show ns ++ "::" ++ show name ++ "(" ++ intercalate ", " (map show es) ++ ")"
+
 data Constant
     = ConstInt Int
     | ConstID Identifier
@@ -35,4 +40,5 @@ data Expr
     | LetIn Identifier Expr Expr
     | FuncCall Identifier [Expr]
     | Lambda Identifier Typename Expr
+    | Match Expr [(Pattern, Expr)]
     deriving Show

@@ -30,13 +30,14 @@ parseStructDec = do
 
 parseFuncDef :: Parser Stmt
 parseFuncDef = do 
-    vis  <- parseVis
-    name <- string "fn" *> space *> parseIdentifier <* openParen
-    args <- optional $ parseTypedParam `sepBy` comma
-    ret  <- closeParen *> optional (string "->" *> space *> parseTypename)
-    body <- parseBody
+    vis    <- parseVis
+    name   <- string "fn" *> space *> parseIdentifier
+    tyargs <- optional $ openAngle *> parseIdentifier `sepBy` comma <* closeAngle
+    args   <- openParen *> optional (parseTypedParam `sepBy` comma)
+    ret    <- closeParen *> optional (string "->" *> space *> parseTypename)
+    body   <- parseBody
 
-    return (Function vis name (fromMaybe [] args) ret body)
+    return (Function vis name (fromMaybe [] tyargs) (fromMaybe [] args) ret body)
 
 parseEnumConstructor :: Parser (Identifier, [Typename])
 parseEnumConstructor = do 
