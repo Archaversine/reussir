@@ -21,21 +21,21 @@ import Data.String (IsString (fromString))
 import Data.Text qualified as T
 import Data.Text.Builder.Linear qualified as TB
 import Effectful.Log (logAttention_)
-import Reussir.Codegen.Context (Emission (emit), Path, emitIndentation, emitLine, incIndentation)
+import Reussir.Codegen.Context (Emission (emit), emitIndentation, emitLine, incIndentation)
 import Reussir.Codegen.Context.Codegen (Codegen, getNewBlockId, incIndentationBy, withLocation, withoutLocation)
 import Reussir.Codegen.Context.Emission (emitBuilder, emitBuilderLine, emitBuilderLineM, emitLocIfPresent, intercalate)
-import Reussir.Codegen.Context.Path (manglePathWithPrefix)
 import Reussir.Codegen.Intrinsics (IntrinsicCall, intrinsicCallCodegen)
 import Reussir.Codegen.Location (Location)
 import Reussir.Codegen.Type.Data (isBoolType, isVoidType)
 import Reussir.Codegen.Type.Data qualified as TT
 import Reussir.Codegen.Value (TypedValue)
+import Reussir.Codegen.Context.Symbol (Symbol, symbolBuilder)
 
 {- | A function call instruction.
 Unlike intrinsic calls, function calls cannot have multiple results.
 -}
 data FuncCall = FuncCall
-    { target :: Path
+    { target :: Symbol
     , args :: [TypedValue]
     , results :: Maybe TypedValue
     }
@@ -345,7 +345,7 @@ data Function = Function
     , funcArgs :: [TypedValue]
     , funcLoc :: Maybe Location
     , funcResult :: TT.Type
-    , funcPath :: Path
+    , funcSymbol :: Symbol
     }
     deriving (Show)
 
@@ -384,7 +384,7 @@ funcCallCodegen :: FuncCall -> Codegen ()
 funcCallCodegen (FuncCall target args result) = emitLine $ do
     argList <- mapM fmtTypedValue args
     for_ result $ emit . fst >=> emitBuilder . (<> " = ")
-    let target' = manglePathWithPrefix target
+    let target' = symbolBuilder target
     emitBuilder $ "func.call @\"" <> target' <> "\"(" <> intercalate ", " argList <> ")"
     for_ result $ emit . snd >=> emitBuilder . (" -> " <>)
 
@@ -658,10 +658,10 @@ functionCodegen function = do
     linkage <- emit (funcLinkage function)
     visibility <- emit (funcLLVMVisibility function)
     let mlirVis = if funcMLIRVisibility function == MLIRVisPrivate then " private " else " "
-    let mangledName = manglePathWithPrefix (funcPath function)
+    let symbol = symbolBuilder (funcSymbol function)
     args <- mapM fmtTypedValue (funcArgs function)
     emitIndentation
-    emitBuilder $ "func.func" <> mlirVis <> "@" <> fromString (show mangledName)
+    emitBuilder $ "func.func" <> mlirVis <> "@\"" <> symbol <> "\""
     emitBuilder $ "(" <> intercalate ", " args <> ")"
     let result = funcResult function
     unless (isVoidType result) $ do

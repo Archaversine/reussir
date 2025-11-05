@@ -15,9 +15,6 @@ module Reussir.Codegen.Context (
     emitIndentation,
     emitLine,
     incIndentation,
-    Path (..),
-    pathSingleton,
-    pathList,
     addTypeInstance,
     runCodegenToBackend,
 )
@@ -49,7 +46,6 @@ import Reussir.Codegen.Context.Module (
     emitOutlineLocs,
     runCodegenToBackend,
  )
-import Reussir.Codegen.Context.Path (Path (..), pathList, pathSingleton)
 
 runCodegen :: (E.IOE :> es, L.Log :> es) => TargetSpec -> Codegen a -> E.Eff es a
 runCodegen spec codegen = do

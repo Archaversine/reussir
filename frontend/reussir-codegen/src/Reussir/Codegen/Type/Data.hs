@@ -11,7 +11,6 @@ module Reussir.Codegen.Type.Data (
     Type (..),
     Rc (..),
     Ref (..),
-    Expr (..),
     Closure (..),
     Tensor (..),
     isRefType,
@@ -22,7 +21,7 @@ where
 
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)
-import Reussir.Codegen.Context.Path (Path)
+import Reussir.Codegen.Context.Symbol (Symbol)
 
 {- | Integer primitive types for MLIR code generation.
 
@@ -138,8 +137,6 @@ data Rc = Rc {rcBoxInner :: Type, rcBoxAtomicity :: Atomicity, rcBoxCapability :
     deriving (Eq, Show, Hashable, Generic)
 data Ref = Ref {refInner :: Type, refAtomicity :: Atomicity, refCapability :: Capability}
     deriving (Eq, Show, Hashable, Generic)
-data Expr = Expr {exprPath :: Path, exprArgs :: [Type]}
-    deriving (Eq, Show, Hashable, Generic)
 data Closure = Closure {closureArgs :: [Type], closureReturnType :: Type}
     deriving (Eq, Show, Hashable, Generic)
 data Tensor = Tensor {tensorEleTy :: Type, tensorDimensions :: [Int]}
@@ -151,7 +148,7 @@ data Type
     | TypeClosure Closure
     | TypeRc Rc
     | TypeRef Ref
-    | TypeExpr Expr
+    | TypeExpr Symbol
     | TypeNullable Type
     | TypeRegion -- Region handle
     deriving (Eq, Show, Hashable, Generic)

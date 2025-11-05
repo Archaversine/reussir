@@ -33,9 +33,8 @@ import Reussir.Codegen.Context.Emission (
     emitBuilder,
  )
 
-import Reussir.Codegen.Type.Data (Type (TypeExpr))
 import Reussir.Codegen.Type.Emission (emitRecord)
-import Reussir.Codegen.Type.Mangle (mangleTypeWithPrefix)
+import Reussir.Codegen.Context.Symbol (symbolBuilder)
 
 -- | Run a Codegen action with an initial context and compile the result.
 runCodegenToBackend :: (E.IOE :> es, L.Log :> es) => TargetSpec -> Codegen () -> Eff es ()
@@ -59,23 +58,17 @@ emitTypeAlias = do
     instances <- E.gets typeInstances
     instances' <- E.liftIO $ H.toList instances
     -- Set all to pending first
-    forM_ instances' $ \(expr, _) -> do
-        let mangled = mangleTypeWithPrefix (TypeExpr expr)
-        let mangled' = TB.runBuilder mangled
-        setRecordEmissionState mangled' RecordEmissionPending
+    forM_ instances' $ flip setRecordEmissionState RecordEmissionPending .  fst
     -- Now emit each one
-    forM_ instances' $ \(expr, record) -> do
-        let mangled = mangleTypeWithPrefix (TypeExpr expr)
-        let mangled' = TB.runBuilder mangled
-        -- Check if already complete
-        status <- getRecordEmissionState mangled'
+    forM_ instances' $ \(sym, record) -> do
+        status <- getRecordEmissionState sym
         case status of
             RecordEmissionComplete -> pure ()
             _ -> do
                 -- Emit the record (which will set state to Incomplete when it encounters recursion)
-                record' <- emitRecord True (Just mangled') record
-                emitBuilder $ "!" <> mangled <> " = " <> record' <> "\n"
-                setRecordEmissionState mangled' RecordEmissionComplete
+                record' <- emitRecord True (Just sym) record
+                emitBuilder $ "!" <> symbolBuilder sym <> " = " <> record' <> "\n"
+                setRecordEmissionState sym RecordEmissionComplete
 
 emitOutlineLocs :: Codegen ()
 emitOutlineLocs = do

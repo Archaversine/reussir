@@ -6,7 +6,6 @@ import Test.Codegen.IR qualified as IR
 import Test.Codegen.Intrinsics.Arith qualified as Arith
 import Test.Codegen.Intrinsics.Math qualified as Math
 import Test.Codegen.Location qualified as Location
-import Test.Codegen.Type.Mangle qualified as Mangle
 import Test.Tasty
 
 main :: IO ()
@@ -18,7 +17,6 @@ tests =
         "Tests"
         [ Arith.arithTests
         , Math.mathTests
-        , Mangle.mangleTests
         , Location.locationTests
         , Module.moduleTests
         , IR.irTests

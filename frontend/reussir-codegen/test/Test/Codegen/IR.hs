@@ -16,7 +16,6 @@ import Log.Backend.StandardOutput qualified as L
 import Reussir.Bridge qualified as B
 import Reussir.Codegen.Context (runCodegen)
 import Reussir.Codegen.Context qualified as C
-import Reussir.Codegen.Context.Path (pathSingleton)
 import Reussir.Codegen.IR qualified as IR
 import Reussir.Codegen.Intrinsics qualified as I
 import Reussir.Codegen.Location qualified as Loc
@@ -24,6 +23,8 @@ import Reussir.Codegen.Type qualified as TT
 import Reussir.Codegen.Value qualified as V
 import Test.Tasty
 import Test.Tasty.HUnit
+import Reussir.Codegen.Context.Symbol (Symbol)
+import Reussir.Codegen.Context.Symbol (verifiedSymbol)
 
 runCodegenAsText :: C.Codegen () -> IO T.Text
 runCodegenAsText codegen = do
@@ -75,7 +76,7 @@ intrinsicCall :: I.IntrinsicCall -> IR.Instr
 intrinsicCall = IR.ICall
 
 -- Helper function for creating function calls
-funcCall :: C.Path -> [V.TypedValue] -> Maybe V.TypedValue -> IR.Instr
+funcCall :: Symbol -> [V.TypedValue] -> Maybe V.TypedValue -> IR.Instr
 funcCall target args result = IR.FCall (IR.FuncCall target args result)
 
 -- Helper function for creating nullable operations
@@ -133,7 +134,7 @@ irTests =
             [ testCase "FCall Codegen without result" $ do
                 result <-
                     runCodegenForInstr
-                        (funcCall (pathSingleton "test_func") [typedVal 1 primitiveI32] Nothing)
+                        (funcCall (verifiedSymbol "test_func") [typedVal 1 primitiveI32] Nothing)
                 let resultStr = T.unpack result
                 assertBool "Should contain func.call" $ "func.call" `isInfixOf` resultStr
                 assertBool "Should contain test_func" $ "test_func" `isInfixOf` resultStr
@@ -143,7 +144,7 @@ irTests =
             , testCase "FCall Codegen with result" $ do
                 result <-
                     runCodegenForInstr
-                        (funcCall (pathSingleton "test_func") [typedVal 1 primitiveI32] (Just (typedVal 2 primitiveI32)))
+                        (funcCall (verifiedSymbol "test_func") [typedVal 1 primitiveI32] (Just (typedVal 2 primitiveI32)))
                 let resultStr = T.unpack result
                 assertBool "Should contain func.call" $ "func.call" `isInfixOf` resultStr
                 assertBool "Should contain result %2" $ "%2 = " `isInfixOf` resultStr
@@ -155,7 +156,7 @@ irTests =
                 result <-
                     runCodegenForInstr
                         ( funcCall
-                            (pathSingleton "test_func")
+                            (verifiedSymbol "test_func")
                             [typedVal 1 primitiveI32, typedVal 2 primitiveI64]
                             (Just (typedVal 3 primitiveBool))
                         )

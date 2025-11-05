@@ -33,8 +33,8 @@ import Effectful.State.Static.Local (State)
 import Effectful.State.Static.Local qualified as E
 import Reussir.Bridge qualified as B
 import Reussir.Codegen.Location (Location)
-import Reussir.Codegen.Type.Data qualified as TT
 import Reussir.Codegen.Type.Record (Record)
+import Reussir.Codegen.Context.Symbol (Symbol)
 
 data TargetSpec = TargetSpec
     { programName :: T.Text
@@ -57,7 +57,7 @@ data Context = MkCtx
     }
 
 type Codegen = Eff '[State Context, Reader TargetSpec, IOE, Log]
-type TypeInstances = H.CuckooHashTable TT.Expr Record
+type TypeInstances = H.CuckooHashTable Symbol Record
 
 data RecordEmissionState
     = RecordEmissionComplete -- An alias has been emitted
@@ -66,7 +66,7 @@ data RecordEmissionState
     deriving (Eq, Show)
 
 type OutlineLocs = H.CuckooHashTable Int64 Location
-type RecordEmissions = H.CuckooHashTable T.Text RecordEmissionState
+type RecordEmissions = H.CuckooHashTable Symbol RecordEmissionState
 
 emptyContext :: (IOE :> es) => Eff es Context
 emptyContext = do
@@ -102,19 +102,19 @@ incIndentationBy n codegen = do
     return res
 
 -- | Add a type instance to the context.
-addTypeInstance :: TT.Expr -> Record -> Codegen ()
+addTypeInstance :: Symbol -> Record -> Codegen ()
 addTypeInstance expr record = do
     hashTable <- E.gets typeInstances
     E.liftIO $ H.insert hashTable expr record
 
 -- | Set the emission state for a record.
-setRecordEmissionState :: T.Text -> RecordEmissionState -> Codegen ()
+setRecordEmissionState :: Symbol -> RecordEmissionState -> Codegen ()
 setRecordEmissionState key state = do
     hashTable <- E.gets recordEmissions
     E.liftIO $ H.insert hashTable key state
 
 -- | Get the emission state for a record.
-getRecordEmissionState :: T.Text -> Codegen RecordEmissionState
+getRecordEmissionState :: Symbol -> Codegen RecordEmissionState
 getRecordEmissionState key = do
     hashTable <- E.gets recordEmissions
     E.liftIO $
@@ -123,7 +123,7 @@ getRecordEmissionState key = do
             Nothing -> pure RecordEmissionPending
 
 -- | Get a record from the context.
-getRecord :: TT.Expr -> Codegen (Maybe Record)
+getRecord :: Symbol -> Codegen (Maybe Record)
 getRecord expr = do
     hashTable <- E.gets typeInstances
     E.liftIO $

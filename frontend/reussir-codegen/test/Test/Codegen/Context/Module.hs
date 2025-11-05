@@ -5,7 +5,6 @@ module Test.Codegen.Context.Module (
 )
 where
 
-import Data.Interned (intern)
 import Data.Text qualified as T
 import Data.Text.Builder.Linear qualified as TB
 import Effectful qualified as E
@@ -16,11 +15,11 @@ import Log.Backend.StandardOutput qualified as L
 import Reussir.Bridge qualified as B
 import Reussir.Codegen.Context (runCodegen)
 import Reussir.Codegen.Context qualified as C
-import Reussir.Codegen.Context.Path (Path (..))
 import Reussir.Codegen.Type qualified as TT
 import Reussir.Codegen.Type.Record (Record (..), RecordKind (..))
 import Test.Tasty
 import Test.Tasty.HUnit
+import Reussir.Codegen.Context.Symbol (verifiedSymbol)
 
 -- | Helper to run codegen and extract the builder as text
 runCodegenAsText :: C.Codegen () -> IO T.Text
@@ -44,10 +43,6 @@ primitiveF32 = TT.TypePrim (TT.PrimFloat TT.PrimFloat32)
 primitiveUnit :: TT.Type
 primitiveUnit = TT.TypePrim TT.PrimUnit
 
--- | Create a path from segments
-mkPath :: [String] -> Path
-mkPath segments = Path (map (intern . T.pack) segments)
-
 -- | Test: Recursive List type with Cons and Nil variants
 testRecursiveListType :: TestTree
 testRecursiveListType = testCase "Recursive List type with Cons and Nil" $ do
@@ -56,17 +51,9 @@ testRecursiveListType = testCase "Recursive List type with Cons and Nil" $ do
     -- List::Nil {}
     -- List { !cons, !nil }
 
-    let consPath = mkPath ["List", "Cons"]
-    let nilPath = mkPath ["List", "Nil"]
-    let listPath = mkPath ["List"]
-
-    -- Type expressions for each variant
-    let consExpr = TT.Expr{TT.exprPath = consPath, TT.exprArgs = []}
-    let nilExpr = TT.Expr{TT.exprPath = nilPath, TT.exprArgs = []}
-    let listExpr = TT.Expr{TT.exprPath = listPath, TT.exprArgs = []}
-
     -- The list type (for recursive reference)
-    let listType = TT.TypeExpr listExpr
+    let listSymbol = verifiedSymbol "_ZN4ListE"
+    let listType = TT.TypeExpr listSymbol
 
     -- Cons variant: { i32, [shared] !list }
     let consRecord =
@@ -88,8 +75,10 @@ testRecursiveListType = testCase "Recursive List type with Cons and Nil" $ do
                 }
 
     -- List type: variant with cons and nil
-    let consType = TT.TypeExpr consExpr
-    let nilType = TT.TypeExpr nilExpr
+    let consSymbol = verifiedSymbol "_ZN4List4ConsE"
+    let nilSymbol = verifiedSymbol "_ZN4List3NilE"
+    let consType = TT.TypeExpr consSymbol
+    let nilType = TT.TypeExpr nilSymbol
     let listRecord =
             Record
                 { kind = Variant
@@ -102,9 +91,9 @@ testRecursiveListType = testCase "Recursive List type with Cons and Nil" $ do
 
     result <- runCodegenAsText $ do
         -- Add type instances
-        C.addTypeInstance consExpr consRecord
-        C.addTypeInstance nilExpr nilRecord
-        C.addTypeInstance listExpr listRecord
+        C.addTypeInstance consSymbol consRecord
+        C.addTypeInstance nilSymbol nilRecord
+        C.addTypeInstance listSymbol listRecord
 
         -- Emit module with empty body
         C.emitModuleEnv $ pure ()
@@ -130,9 +119,7 @@ testRecursiveListType = testCase "Recursive List type with Cons and Nil" $ do
 -- | Test: Simple compound type
 testSimpleCompoundType :: TestTree
 testSimpleCompoundType = testCase "Simple compound type" $ do
-    let pointPath = mkPath ["Point"]
-    let pointExpr = TT.Expr{TT.exprPath = pointPath, TT.exprArgs = []}
-
+    let pointSymbol = verifiedSymbol "_ZN5PointE"
     let pointRecord =
             Record
                 { kind = Compound
@@ -144,7 +131,7 @@ testSimpleCompoundType = testCase "Simple compound type" $ do
                 }
 
     result <- runCodegenAsText $ do
-        C.addTypeInstance pointExpr pointRecord
+        C.addTypeInstance pointSymbol pointRecord
         C.emitModuleEnv $ pure ()
 
     let resultStr = T.unpack result
@@ -156,14 +143,6 @@ testSimpleCompoundType = testCase "Simple compound type" $ do
 -- | Test: Variant type with capabilities
 testVariantWithCapabilities :: TestTree
 testVariantWithCapabilities = testCase "Variant type with different capabilities" $ do
-    let somePath = mkPath ["Option", "Some"]
-    let nonePath = mkPath ["Option", "None"]
-    let optionPath = mkPath ["Option"]
-
-    let someExpr = TT.Expr{TT.exprPath = somePath, TT.exprArgs = []}
-    let noneExpr = TT.Expr{TT.exprPath = nonePath, TT.exprArgs = []}
-    let optionExpr = TT.Expr{TT.exprPath = optionPath, TT.exprArgs = []}
-
     -- Some { [value] i32 }
     let someRecord =
             Record
@@ -181,8 +160,11 @@ testVariantWithCapabilities = testCase "Variant type with different capabilities
                 }
 
     -- Option { !some, !none }
-    let someType = TT.TypeExpr someExpr
-    let noneType = TT.TypeExpr noneExpr
+    let someSymbol = verifiedSymbol "_ZN6Option4SomeE"
+    let noneSymbol = verifiedSymbol "_ZN6Option4NoneE"
+    let optionSymbol = verifiedSymbol "_ZN6OptionE"
+    let someType = TT.TypeExpr someSymbol
+    let noneType = TT.TypeExpr noneSymbol
     let optionRecord =
             Record
                 { kind = Variant
@@ -194,9 +176,9 @@ testVariantWithCapabilities = testCase "Variant type with different capabilities
                 }
 
     result <- runCodegenAsText $ do
-        C.addTypeInstance someExpr someRecord
-        C.addTypeInstance noneExpr noneRecord
-        C.addTypeInstance optionExpr optionRecord
+        C.addTypeInstance someSymbol someRecord
+        C.addTypeInstance noneSymbol noneRecord
+        C.addTypeInstance optionSymbol optionRecord
         C.emitModuleEnv $ pure ()
 
     let resultStr = T.unpack result

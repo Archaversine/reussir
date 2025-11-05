@@ -61,7 +61,7 @@ library
     -- Modules exported by the library.
     exposed-modules:  
         Reussir.Codegen.Context
-        Reussir.Codegen.Context.Path
+        Reussir.Codegen.Context.Symbol
         Reussir.Codegen.IR
         Reussir.Codegen.Intrinsics
         Reussir.Codegen.Value
@@ -79,7 +79,6 @@ library
         Reussir.Codegen.Intrinsics.Math
         Reussir.Codegen.Type.Data
         Reussir.Codegen.Type.Emission
-        Reussir.Codegen.Type.Mangle
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -96,6 +95,7 @@ library
         log-base ^>= 0.12,
         scientific ^>= 0.3.8,
         text-builder-linear ^>= 0.1.3,
+        unicode-data ^>=0.8.0,
         reussir-bridge
 
     -- Directories containing source files.
@@ -116,7 +116,6 @@ test-suite reussir-codegen-test
         Test.Codegen
         Test.Codegen.Intrinsics.Arith
         Test.Codegen.Intrinsics.Math
-        Test.Codegen.Type.Mangle
         Test.Codegen.Context.Module
         Test.Codegen.Location
         Test.Codegen.IR

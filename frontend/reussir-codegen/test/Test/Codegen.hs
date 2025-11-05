@@ -14,11 +14,11 @@ import Log.Backend.StandardOutput qualified as L
 import Reussir.Bridge qualified as B
 import Reussir.Codegen qualified as C
 import Reussir.Codegen.Context (TargetSpec (..))
-import Reussir.Codegen.Context.Path (pathSingleton)
 import Reussir.Codegen.IR qualified as IR
 import Reussir.Codegen.Intrinsics qualified as I
 import Reussir.Codegen.Type qualified as TT
 import Reussir.Codegen.Value qualified as V
+import Reussir.Codegen.Context.Symbol (verifiedSymbol)
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -47,7 +47,7 @@ createAddF32Function =
         { funcLinkage = IR.LnkExternal
         , funcLLVMVisibility = IR.LLVMVisDefault
         , funcMLIRVisibility = IR.MLIRVisPublic
-        , funcPath = pathSingleton "add_f32"
+        , funcSymbol = verifiedSymbol "add_f32"
         , funcArgs = [f32val 0, f32val 1]
         , funcResult = primitiveF32
         , funcLoc = Nothing

@@ -3,8 +3,6 @@
 
 module Reussir.Codegen.Type.Emission (emitRecord) where
 
-import Data.String (fromString)
-import Data.Text qualified as T
 import Data.Text.Builder.Linear qualified as TB
 import Reussir.Codegen.Context.Codegen
 import Reussir.Codegen.Context.Emission (Emission (emit), intercalate)
@@ -19,8 +17,8 @@ import Reussir.Codegen.Type.Data (
     Ref (..),
     Type (..),
  )
-import Reussir.Codegen.Type.Mangle (mangleTypeWithPrefix)
 import Reussir.Codegen.Type.Record (Record (..), RecordField, RecordKind (..))
+import Reussir.Codegen.Context.Symbol (symbolBuilder, Symbol)
 
 instance Emission PrimitiveInt where
     emit PrimInt8 = pure "i8"
@@ -76,10 +74,10 @@ emitTy toplevel (TypeClosure (Closure args returnTy)) = do
         _ -> do
             returnTy' <- emitTy toplevel returnTy
             pure $ "!reussir.closure<(" <> concatArgs' <> ") -> " <> returnTy' <> ">"
-emitTy toplevel ty@(TypeExpr expr) = do
-    record <- getRecord expr
+emitTy toplevel (TypeExpr sym) = do
+    record <- getRecord sym
     case record of
-        Just r -> emitRecord toplevel (Just $ TB.runBuilder $ mangleTypeWithPrefix ty) r
+        Just r -> emitRecord toplevel (Just sym) r
         Nothing -> error "Record not found for expression"
 emitTy toplevel (TypeNullable ty) = do
     ty' <- emitTy toplevel ty
@@ -98,7 +96,7 @@ instance Emission RecordKind where
 -- !reussir.record<compound "List::Cons" { i32, [shared] !list_incomplete }>
 -- !reussir.record<compound "List::Nil" {}>
 
-emitRecord :: Bool -> Maybe T.Text -> Record -> Codegen TB.Builder
+emitRecord :: Bool -> Maybe Symbol -> Record -> Codegen TB.Builder
 emitRecord
     toplevel -- if this is toplevel, current emission must proceed
     name
@@ -119,15 +117,15 @@ emitRecord
                 doEmit
       where
         -- check if we can directly use alias or we really need to emit a record
-        emitRecordGuard :: Maybe T.Text -> Codegen (Maybe TB.Builder)
+        emitRecordGuard :: Maybe Symbol -> Codegen (Maybe TB.Builder)
         emitRecordGuard Nothing = pure Nothing
         emitRecordGuard (Just n) = do
             status <- getRecordEmissionState n
             case status of
-                RecordEmissionComplete -> pure $ Just $ "!" <> TB.fromText n
+                RecordEmissionComplete -> pure $ Just $ "!" <> symbolBuilder n
                 RecordEmissionIncomplete -> do
                     kind' <- emit kind
-                    pure $ Just $ "!reussir.record<" <> kind' <> " " <> fromString (show n) <> ">"
+                    pure $ Just $ "!reussir.record<" <> kind' <> " \"" <> symbolBuilder n <> "\">"
                 RecordEmissionPending -> pure Nothing
 
         translateCapability :: Capability -> TB.Builder
@@ -149,7 +147,7 @@ emitRecord
         doEmit :: Codegen TB.Builder
         doEmit = do
             name' <- case name of
-                Just n -> pure $ " \"" <> TB.fromText n <> "\" "
+                Just n -> pure $ " \"" <> symbolBuilder n <> "\" "
                 Nothing -> pure " "
             kind' <- emit kind
             let defaultCapability' = translateCapability defaultCapability

@@ -17,14 +17,13 @@ module Reussir.Codegen.Context.Emission (
 where
 
 import Data.Foldable (for_)
-import Data.Interned (Uninternable (unintern))
 import Data.String (fromString)
 import Data.Text.Builder.Linear qualified as TB
 import Data.Text.Builder.Linear.Buffer qualified as TBB
 import Effectful.State.Static.Local qualified as E
 import Reussir.Codegen.Context.Codegen (Codegen, Context (..))
-import Reussir.Codegen.Context.Path (Path (..))
 import Reussir.Codegen.Location (Location (..))
+import Reussir.Codegen.Context.Symbol (Symbol, symbolText)
 
 {- | The Emission class provides a way to convert values to Text.Builder
   within the Codegen monad. This is used for emitting MLIR text.
@@ -96,9 +95,8 @@ intercalate sep (x : xs) = let !rest = intercalate sep xs in x <> sep <> rest
 {- | Emission instance for Path.
   This is defined here (not in Context.Path) to avoid cyclic dependencies.
 -}
-instance Emission Path where
-    emit (Path segments) =
-        pure $ intercalate "::" (map (TB.fromText . unintern) segments)
+instance Emission Symbol where
+    emit = pure . TB.fromText . symbolText
 
 -- callsite-location ::= `callsite` `(` location `at` location `)`
 -- filelinecol-location ::= string-literal `:` integer-literal `:`
