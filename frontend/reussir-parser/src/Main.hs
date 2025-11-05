@@ -1,7 +1,7 @@
 module Main where
 
-import Parser.Prog
-import Parser.Types
+import Reussir.Parser.Prog
+import Reussir.Parser.Types
 
 import System.Environment
 import System.Exit

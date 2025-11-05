@@ -11,7 +11,7 @@ cabal-version:      3.0
 --   http://haskell.org/cabal/users-guide/
 --
 -- The name of the package.
-name:               reussir-frontend
+name:               reussir-parser
 
 -- The package version.
 -- See the Haskell package versioning policy (PVP) for standards
@@ -61,12 +61,12 @@ executable reussir-frontend
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    other-modules:    Parser.Expr
-                      Parser.Stmt
-                      Parser.Prog
-                      Parser.Types
-                      Parser.Types.Expr
-                      Parser.Types.Stmt
+    other-modules:    Reussir.Parser.Expr
+                      Reussir.Parser.Stmt
+                      Reussir.Parser.Prog
+                      Reussir.Parser.Types
+                      Reussir.Parser.Types.Expr
+                      Reussir.Parser.Types.Stmt
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:

@@ -1,4 +1,4 @@
-module Parser.Types.Expr where
+module Reussir.Parser.Types.Expr where
 
 import Data.List
 

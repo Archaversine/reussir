@@ -1,14 +1,14 @@
 {-# LANGUAGE LambdaCase #-}
 
-module Parser.Expr where
+module Reussir.Parser.Expr where
 
 import Control.Monad.Combinators.Expr
 
 import Data.Functor
 import Data.Maybe
 
-import Parser.Types
-import Parser.Types.Expr
+import Reussir.Parser.Types
+import Reussir.Parser.Types.Expr
 
 colon :: Parser ()
 colon = char ':' *> space

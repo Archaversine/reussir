@@ -1,4 +1,4 @@
-module Parser.Types ( module Text.Megaparsec 
+module Reussir.Parser.Types ( module Text.Megaparsec 
                     , module Text.Megaparsec.Char
                     , Parser
                     ) where

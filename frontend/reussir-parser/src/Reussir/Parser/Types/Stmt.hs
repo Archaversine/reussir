@@ -1,6 +1,6 @@
-module Parser.Types.Stmt where
+module Reussir.Parser.Types.Stmt where
 
-import Parser.Types.Expr
+import Reussir.Parser.Types.Expr
 
 data Visibility = Public | Private deriving Show
 

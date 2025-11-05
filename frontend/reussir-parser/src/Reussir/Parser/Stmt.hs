@@ -1,12 +1,12 @@
-module Parser.Stmt where
+module Reussir.Parser.Stmt where
 
 import Data.Maybe
 
-import Parser.Expr
+import Reussir.Parser.Expr
 
-import Parser.Types
-import Parser.Types.Expr
-import Parser.Types.Stmt
+import Reussir.Parser.Types
+import Reussir.Parser.Types.Expr
+import Reussir.Parser.Types.Stmt
 
 parseVis :: Parser Visibility
 parseVis = optional (string "pub" *> space) >>= \case 
