@@ -80,6 +80,7 @@ createSimpleModule =
                 B.OptDefault
                 B.OutputObject
                 B.LogInfo
+        , C.recordInstances = []
         }
 
 codegenTests :: TestTree
