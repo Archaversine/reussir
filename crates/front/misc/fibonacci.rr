@@ -29,7 +29,7 @@ fn fibonacci_logarithmic_impl(
     b00: u64,
     b01: u64,
     b10: u64,
-    b11: u64,
+    b11: u64
 ) -> u64 {
     if n == 0u64 {
         a01
@@ -48,7 +48,7 @@ fn fibonacci_logarithmic_impl(
                 b00 * b00 + b01 * b10,
                 b00 * b01 + b01 * b11,
                 b10 * b00 + b11 * b10,
-                b10 * b01 + b11 * b11,
+                b10 * b01 + b11 * b11
             )
         } else {
             fibonacci_logarithmic_impl(
@@ -60,7 +60,7 @@ fn fibonacci_logarithmic_impl(
                 b00 * b00 + b01 * b10,
                 b00 * b01 + b01 * b11,
                 b10 * b00 + b11 * b10,
-                b10 * b01 + b11 * b11,
+                b10 * b01 + b11 * b11
             )
         }
     }
