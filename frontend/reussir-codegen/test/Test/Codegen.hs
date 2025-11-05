@@ -33,6 +33,9 @@ val = V.Value
 typedVal :: Int64 -> TT.Type -> V.TypedValue
 typedVal v t = (val v, t)
 
+f32val :: Int64 -> V.TypedValue
+f32val v = typedVal v primitiveF32
+
 -- Helper to check if a string is present in the output
 isInfixOf :: String -> String -> Bool
 isInfixOf needle haystack = T.pack needle `T.isInfixOf` T.pack haystack
@@ -45,21 +48,21 @@ createAddF32Function =
         , funcLLVMVisibility = IR.LLVMVisDefault
         , funcMLIRVisibility = IR.MLIRVisPublic
         , funcPath = pathSingleton "add_f32"
-        , funcArgs = [typedVal 0 primitiveF32, typedVal 1 primitiveF32]
+        , funcArgs = [f32val 0, f32val 1]
         , funcResult = primitiveF32
         , funcLoc = Nothing
         , funcBody =
             Just
                 ( IR.Block
-                    { blkArgs = [typedVal 0 primitiveF32, typedVal 1 primitiveF32]
+                    { blkArgs = [f32val 0, f32val 1]
                     , blkBody =
                         [ IR.ICall
                             ( I.IntrinsicCall
                                 (I.Arith (I.Addf (I.FastMathFlag 0)))
-                                [typedVal 0 primitiveF32, typedVal 1 primitiveF32]
-                                [typedVal 2 primitiveF32]
+                                [f32val 0, f32val 1]
+                                [f32val 2]
                             )
-                        , IR.Return (Just (typedVal 2 primitiveF32))
+                        , IR.Return (Just (f32val 2))
                         ]
                     }
                 )
