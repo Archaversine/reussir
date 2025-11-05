@@ -179,10 +179,10 @@ exprOpTable = [ [ prefixOp "-" Negate
               , [ infixLOp "+" Add
                 , infixLOp "-" Sub
                 ]
-              , [ infixNOp ">" Gt
-                , infixNOp "<" Lt
-                , infixNOp ">=" Gte
+              , [ infixNOp ">=" Gte
                 , infixNOp "<=" Lte
+                , infixNOp ">" Gt
+                , infixNOp "<" Lt
                 , infixNOp "==" Equ
                 , infixNOp "!=" Neq
                 ]
