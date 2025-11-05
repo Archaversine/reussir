@@ -6,7 +6,7 @@ module Reussir.Codegen.Context (
     Codegen,
     emptyContext,
     runCodegen,
-    emitModule,
+    emitModuleEnv,
     emitOutlineLocs,
     Emission (emit),
     emitCG,
@@ -45,7 +45,7 @@ import Reussir.Codegen.Context.Emission (
     emitSpace,
  )
 import Reussir.Codegen.Context.Module (
-    emitModule,
+    emitModuleEnv,
     emitOutlineLocs,
     runCodegenToBackend,
  )

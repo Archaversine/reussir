@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+import Test.Codegen qualified as Codegen
 import Test.Codegen.Context.Module qualified as Module
 import Test.Codegen.IR qualified as IR
 import Test.Codegen.Intrinsics.Arith qualified as Arith
@@ -21,4 +22,5 @@ tests =
         , Location.locationTests
         , Module.moduleTests
         , IR.irTests
+        , Codegen.codegenTests
         ]

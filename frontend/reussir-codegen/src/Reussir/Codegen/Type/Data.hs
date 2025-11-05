@@ -16,6 +16,7 @@ module Reussir.Codegen.Type.Data (
     Tensor (..),
     isRefType,
     isBoolType,
+    isVoidType,
 )
 where
 
@@ -71,3 +72,7 @@ isBoolType _ = False
 isRefType :: Type -> Bool
 isRefType (TypeRef _) = True
 isRefType _ = False
+
+isVoidType :: Type -> Bool
+isVoidType (TypePrim PrimUnit) = True
+isVoidType _ = False

@@ -3,7 +3,7 @@
 module Reussir.Codegen.Context.Module (
     runCodegenToBackend,
     emitOutlineLocs,
-    emitModule,
+    emitModuleEnv,
 )
 where
 
@@ -32,6 +32,7 @@ import Reussir.Codegen.Context.Emission (
     Emission (emit),
     emitBuilder,
  )
+
 import Reussir.Codegen.Type.Data (Type (TypeExpr))
 import Reussir.Codegen.Type.Emission (emitRecord)
 import Reussir.Codegen.Type.Mangle (mangleTypeWithPrefix)
@@ -85,8 +86,8 @@ emitOutlineLocs = do
         emitBuilder $ "#loc" <> TB.fromDec l <> " = " <> loc' <> "\n"
 
 -- | Emit a complete MLIR module with the given body.
-emitModule :: Codegen () -> Codegen ()
-emitModule body = do
+emitModuleEnv :: Codegen () -> Codegen ()
+emitModuleEnv body = do
     emitTypeAlias
     name <- fmap (fromString . show) $ E.asks programName
     emitBuilder $ "module @" <> name <> " {\n"

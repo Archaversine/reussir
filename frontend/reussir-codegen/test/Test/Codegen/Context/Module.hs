@@ -107,7 +107,7 @@ testRecursiveListType = testCase "Recursive List type with Cons and Nil" $ do
         C.addTypeInstance listExpr listRecord
 
         -- Emit module with empty body
-        C.emitModule $ pure ()
+        C.emitModuleEnv $ pure ()
 
     -- Expected output should contain type aliases
     let resultStr = T.unpack result
@@ -145,7 +145,7 @@ testSimpleCompoundType = testCase "Simple compound type" $ do
 
     result <- runCodegenAsText $ do
         C.addTypeInstance pointExpr pointRecord
-        C.emitModule $ pure ()
+        C.emitModuleEnv $ pure ()
 
     let resultStr = T.unpack result
 
@@ -197,7 +197,7 @@ testVariantWithCapabilities = testCase "Variant type with different capabilities
         C.addTypeInstance someExpr someRecord
         C.addTypeInstance noneExpr noneRecord
         C.addTypeInstance optionExpr optionRecord
-        C.emitModule $ pure ()
+        C.emitModuleEnv $ pure ()
 
     let resultStr = T.unpack result
 

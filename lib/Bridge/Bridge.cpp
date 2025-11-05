@@ -183,7 +183,7 @@ bool writeBufferToFile(const void *data, size_t size, const char *filename) {
   return true;
 }
 #endif
-void emitModule(llvm::Module &llvmModule, llvm::TargetMachine &tm,
+void emitModuleEnv(llvm::Module &llvmModule, llvm::TargetMachine &tm,
                 const char *filename, ReussirOutputTarget target) {
   std::error_code ec;
   llvm::raw_fd_ostream dest(filename, ec, llvm::sys::fs::OF_None);
@@ -332,7 +332,7 @@ void reussir_bridge_compile_for_native_machine(const char *mlir_module,
                    output_file);
       return;
     }
-    emitModule(*llvmModule, *tm, output_file, target);
+    emitModuleEnv(*llvmModule, *tm, output_file, target);
   } else {
     // TPDE compilation path
 #ifdef REUSSIR_HAS_TPDE
@@ -378,7 +378,7 @@ void reussir_bridge_compile_for_native_machine(const char *mlir_module,
                    output_file);
       return;
     }
-    emitModule(*llvmModule, *tm, output_file, target);
+    emitModuleEnv(*llvmModule, *tm, output_file, target);
 #endif
   }
 }

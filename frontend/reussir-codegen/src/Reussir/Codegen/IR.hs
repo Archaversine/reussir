@@ -11,6 +11,7 @@ module Reussir.Codegen.IR (
     MLIRVisibility (..),
     YieldKind (..),
     instrCodegen,
+    functionCodegen,
 ) where
 
 import Control.Monad (unless, when, (>=>))
@@ -23,9 +24,10 @@ import Effectful.Log (logAttention_)
 import Reussir.Codegen.Context (Emission (emit), Path, emitIndentation, emitLine, incIndentation)
 import Reussir.Codegen.Context.Codegen (Codegen, getNewBlockId, incIndentationBy, withLocation, withoutLocation)
 import Reussir.Codegen.Context.Emission (emitBuilder, emitBuilderLine, emitBuilderLineM, emitLocIfPresent, intercalate)
+import Reussir.Codegen.Context.Path (manglePathWithPrefix)
 import Reussir.Codegen.Intrinsics (IntrinsicCall, intrinsicCallCodegen)
 import Reussir.Codegen.Location (Location)
-import Reussir.Codegen.Type.Data (isBoolType)
+import Reussir.Codegen.Type.Data (isBoolType, isVoidType)
 import Reussir.Codegen.Type.Data qualified as TT
 import Reussir.Codegen.Value (TypedValue)
 
@@ -332,8 +334,8 @@ data LLVMVisibility
 
 data MLIRVisibility
     = MLIRVisPublic
-    | MLIRvisProtected
-    deriving (Show)
+    | MLIRVisPrivate
+    deriving (Show, Eq)
 
 data Function = Function
     { funcLinkage :: Linkage
@@ -342,7 +344,8 @@ data Function = Function
     , funcBody :: Maybe Block
     , funcArgs :: [TypedValue]
     , funcLoc :: Maybe Location
-    , result :: TT.Type
+    , funcResult :: TT.Type
+    , funcPath :: Path
     }
     deriving (Show)
 
@@ -626,3 +629,44 @@ instrCodegen (ClosureEval target res) = closureEvalCodegen target res
 instrCodegen (ClosureUniqify target res) = closureUniqifyCodegen target res
 instrCodegen (IfThenElse cond thenBlock elseBlock res) = ifThenElseCodegen cond thenBlock elseBlock res
 instrCodegen (WithLoc loc instr) = withLocation loc (instrCodegen instr)
+
+wrapLinkage :: TB.Builder -> Codegen TB.Builder
+wrapLinkage builder = pure $ "#llvm.linkage<" <> builder <> ">"
+
+instance Emission Linkage where
+    emit LnkInternal = wrapLinkage "internal"
+    emit LnkPrivate = wrapLinkage "private"
+    emit LnkWeakODR = wrapLinkage "weakodr"
+    emit LnkExternal = wrapLinkage "external"
+    emit LnkLinkOnce = wrapLinkage "linkonce"
+    emit LnkLinkOnceODR = wrapLinkage "linkonce_odr"
+    emit LnkAvailableExternally = wrapLinkage "available_externally"
+    emit LnkCommon = wrapLinkage "common"
+    emit LnkAppending = wrapLinkage "appending"
+    emit LnkWeak = wrapLinkage "weak"
+    emit LnkExternWeak = wrapLinkage "extern_weak"
+
+instance Emission LLVMVisibility where
+    emit LLVMVisDefault = pure "default"
+    emit LLVMVisHidden = pure "hidden"
+    emit LLVMVisProtected = pure "protected"
+
+functionCodegen :: Function -> Codegen ()
+functionCodegen function = do
+    emitIndentation
+    linkage <- emit (funcLinkage function)
+    visibility <- emit (funcLLVMVisibility function)
+    let mlirVis = if funcMLIRVisibility function == MLIRVisPrivate then " private " else " "
+    let mangledName = manglePathWithPrefix (funcPath function)
+    args <- mapM fmtTypedValue (funcArgs function)
+    emitIndentation
+    emitBuilder $ "func.func" <> mlirVis <> "@" <> fromString (show mangledName)
+    emitBuilder $ "(" <> intercalate ", " args <> ")"
+    let result = funcResult function
+    unless (isVoidType result) $ do
+        result' <- emit result
+        emitBuilder $ " -> " <> result'
+    emitBuilder $ " attributes { llvm.linkage = " <> linkage <> ", llvm.visibility = \"" <> visibility <> "\" }"
+    for_ (funcBody function) $ \body -> incIndentation $ blockCodegen False body
+    for_ (funcLoc function) $ \loc -> withLocation loc emitLocIfPresent
+    emitBuilder "\n"
